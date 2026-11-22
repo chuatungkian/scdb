@@ -48,6 +48,8 @@ canvas:active{cursor:grabbing}
 .chair-controls span{font-size:11px}
 .chair-controls button{width:42px;height:42px;border-radius:6px;border:1px solid #ffffff53;background:#41483e;color:#fff;font-size:22px;line-height:1}
 .chair-controls button:hover,.chair-controls button:active{background:#596858}
+.chair-controls #chair-seat{width:100%;height:35px;font-size:13px;padding:0 7px}
+#interaction-note{z-index:1}
 .touchhint{display:none}
 [hidden]{display:none!important}
 @media(pointer:coarse){.joystick{display:block}.touchhint{display:inline}.keyhint{display:none}}
@@ -63,7 +65,11 @@ canvas:active{cursor:grabbing}
 </select><button class="action" id="door" type="button">Close door</button></div></header>
 <main class="stage">
 <canvas tabindex="0" aria-label="3D office. Drag or use arrow keys to look. Use W A S D to walk."></canvas>
-<div class="hint" id="hint"><span class="keyhint">Drag to look · WASD to walk · Drag chair to move it</span><span class="touchhint">Joystick to walk · Drag to look or move chair</span></div>
+<div class="hint" id="hint">
+  <span id="walking-hint"><span class="keyhint">Drag to look · WASD to walk · Tap or drag chair</span><span class="touchhint">Joystick to walk · Tap or drag chair</span></span>
+  <span id="seated-hint" hidden>Turn to swivel · Tap a keyboard, mouse or cup</span>
+</div>
+<output class="viewcaption" id="interaction-note" aria-live="polite" hidden></output>
 <div class="viewcaption" id="caption" hidden></div>
 <div class="joystick" id="joystick" role="group" aria-label="Movement joystick">
   <span class="joystick-knob" aria-hidden="true"></span>
@@ -100,6 +106,7 @@ canvas:active{cursor:grabbing}
 </fieldset>
 </div></details>
 <div class="chair-controls" id="chair-controls" role="group" aria-label="Rotate chair">
+  <button type="button" id="chair-seat" aria-pressed="false">Sit down</button>
   <span aria-hidden="true">Rotate chair</span>
   <div>
     <button type="button" id="chair-left" aria-label="Rotate chair left" title="Rotate chair left">↺</button>
@@ -119,6 +126,10 @@ const hint = document.querySelector('#hint');
 const caption = document.querySelector('#caption');
 const joystick = document.querySelector('#joystick');
 const chairControls=document.querySelector('#chair-controls');
+const seatButton=document.querySelector('#chair-seat');
+const seatedHint=document.querySelector('#seated-hint');
+const walkingHint=document.querySelector('#walking-hint');
+const interactionNote=document.querySelector('#interaction-note');
 const equipmentInputs=Array.from(document.querySelectorAll('[data-equipment]'));
 const visibleEquipment=new Set(equipmentInputs.map(input=>input.dataset.equipment));
 try {
@@ -152,12 +163,25 @@ uniform vec2 chairShift;
 uniform vec2 chairPivot;
 uniform float chairRotation;
 uniform vec3 lavaOffsets[9];
+uniform vec3 cupCenters[2];
+uniform vec4 sipOffsets[2];
+uniform vec3 eye;
 out vec3 world, nrm, rgb;
 out vec2 coord;
 flat out int kind;
 void main(){
   world=position; nrm=normal; rgb=color; coord=uv; kind=int(mod(material,32.0));
-  if(material>=96.0){
+  if(material>=128.0){
+    int cup=int((material-128.0)/32.0);
+    vec4 pose=sipOffsets[cup];
+    float c=cos(pose.w),s=sin(pose.w);
+    vec3 towards=vec3(eye.x-cupCenters[cup].x+.00001,0.,eye.z-cupCenters[cup].z);
+    vec3 axis=normalize(cross(vec3(0.,1.,0.),towards));
+    vec3 relative=world-cupCenters[cup];
+    relative=relative*c+cross(axis,relative)*s+axis*dot(axis,relative)*(1.-c);
+    nrm=nrm*c+cross(axis,nrm)*s+axis*dot(axis,nrm)*(1.-c);
+    world=cupCenters[cup]+relative+pose.xyz;
+  }else if(material>=96.0){
     world+=lavaOffsets[int(material)-96];
     kind=14;
   }else if(material>=64.0){
@@ -286,7 +310,7 @@ gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));
 gl.linkProgram(program);
 if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
 gl.useProgram(program);
-const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','oak','banner','screens','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
+const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','cupCenters[0]','sipOffsets[0]','oak','banner','screens','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
 
 function art(width,height,draw){
   const surface=document.createElement('canvas');
@@ -1193,6 +1217,7 @@ positions(-1.426,-1.038,stationFacing,()=>{
   transform=place;
 });
 
+const cupCenters=[];
 function cupPlate(id,z,isWarm){
   bucket=id;
   positions(-1.080,z,stationFacing,()=>{
@@ -1202,7 +1227,11 @@ function cupPlate(id,z,isWarm){
     slab(outline,[0,0],0,.015,'#565b60',housing);
     spin([[0,.015],[.057,.015],[.060,.018],[.051,.021],[0,.021]],hue,4,28);
     block(0,.008,.070,.019,.005,.001,ind,5);
+    // Track only the cup vertices so the plate stays on the desk during a sip.
+    const first=geometry[id].length;
+    cupCenters.push(transform([0,.070,0]));
     // 300 mL titanium cup, with a rolled lip, hollow interior and wire grip.
+    spin([[0,.067],[.031,.067],[.031,.066]],'#7da7bb',4,24);
     spin([[0,.021],[.032,.021],[.035,.027],[.036,.102],[.037,.106],[.034,.107],
       [.032,.101],[.032,.031],[0,.031]],'#adb4ba',4,30);
     spin([[.036,.097],[.038,.102],[.037,.107],[.034,.107]],'#d4dbdf',4,30);
@@ -1211,6 +1240,8 @@ function cupPlate(id,z,isWarm){
       const wire=[[x,.083,.035],[x,.082,.057],[x,.071,.063],[x,.051,.062],[x,.046,.047],[x,.046,.034]];
       for(let i=1;i<wire.length;i++)tube(wire[i-1],wire[i],.0018,.0018,'#8c969c',4,7);
     }
+    const shift=isWarm?160:128;
+    for(let i=first+11;i<geometry[id].length;i+=12)geometry[id][i]+=shift;
   });
 }
 cupPlate('coolingPlate',-1.146,false);
@@ -1266,6 +1297,7 @@ for(const [name,data] of Object.entries(geometry)){
 }
 gl.uniform3fv(uniforms.hinge,hinge);
 gl.uniform2f(uniforms.chairPivot,chairHome.x,chairHome.z);
+gl.uniform3fv(uniforms['cupCenters[0]'],new Float32Array(cupCenters.flat()));
 gl.enable(gl.DEPTH_TEST);
 gl.clearColor(.31,.31,.285,1);
 
@@ -1278,7 +1310,145 @@ const presets={
 let mode='entry', yaw=0,pitch=0,eye=[0,0,0], keys=new Set(), doorAngle=1.45,doorGoal=1.45;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const stick={id:null,right:0,forward:0};
-let drag=null;
+let drag=null,seated=false,standingPose=null;
+const deskTargets=['keyboard1','keyboard4','mouse1','mouse4','coolingPlate','warmerPlate'];
+const targetBounds=new Map(deskTargets.map(id=>{
+  const points=geometry[id];
+  const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
+  for(let i=0;i<points.length;i+=12){
+    for(let axis=0;axis<3;axis++){
+      min[axis]=Math.min(min[axis],points[i+axis]);
+      max[axis]=Math.max(max[axis],points[i+axis]);
+    }
+  }
+  return [id,{min,max}];
+}));
+const sipOffsets=new Float32Array(8);
+let sip=null, soundContext;
+function audioContext(){
+  const Audio=window.AudioContext||window.webkitAudioContext;
+  if(!Audio)return null;
+  try{
+    soundContext??=new Audio();
+    if(soundContext.state==='suspended')soundContext.resume().catch(()=>{});
+    return soundContext;
+  }catch{return null;}
+}
+function playClick(mouse){
+  const audio=audioContext();
+  if(!audio)return;
+  const start=audio.currentTime,tone=audio.createOscillator(),level=audio.createGain();
+  tone.type=mouse?'triangle':'square';
+  tone.frequency.setValueAtTime(mouse?1180:785,start);
+  tone.frequency.exponentialRampToValueAtTime(mouse?300:190,start+.035);
+  level.gain.setValueAtTime(.085,start);
+  level.gain.exponentialRampToValueAtTime(.001,start+.050);
+  tone.connect(level);level.connect(audio.destination);
+  tone.start(start);tone.stop(start+.054);
+}
+function playSip(){
+  const audio=audioContext();
+  if(!audio)return;
+  const start=audio.currentTime+.57, length=.27;
+  const sound=audio.createBuffer(1,Math.ceil(audio.sampleRate*length),audio.sampleRate);
+  const samples=sound.getChannelData(0);
+  for(let i=0;i<samples.length;i++){
+    const phase=i/samples.length;
+    samples[i]=(Math.random()*2-1)*Math.sin(Math.PI*phase)*(.62+.38*Math.sin(42*phase));
+  }
+  const stream=audio.createBufferSource(),filter=audio.createBiquadFilter(),gain=audio.createGain();
+  stream.buffer=sound;filter.type='bandpass';filter.frequency.value=560;filter.Q.value=.65;
+  gain.gain.value=.20;
+  stream.connect(filter);filter.connect(gain);gain.connect(audio.destination);
+  stream.start(start);
+}
+function cameraForward(){
+  const c=Math.cos(pitch);
+  return [Math.sin(yaw)*c,Math.sin(pitch),-Math.cos(yaw)*c];
+}
+function rayBox(ray,min,max){
+  let near=.041,far=5;
+  for(let axis=0;axis<3;axis++){
+    if(Math.abs(ray[axis])<.0001){
+      if(eye[axis]<min[axis]||eye[axis]>max[axis])return Infinity;
+      continue;
+    }
+    const a=(min[axis]-eye[axis])/ray[axis],b=(max[axis]-eye[axis])/ray[axis];
+    near=Math.max(near,Math.min(a,b));far=Math.min(far,Math.max(a,b));
+    if(near>far)return Infinity;
+  }
+  return near;
+}
+function pickDeskItem(event){
+  if(eye[2]>=front)return null;
+  const ray=pointerRay(event),desktop=projectToHeight(ray,deskSurface);
+  const maxDistance=desktop&&insideDesktop(desktop.x,desktop.z)?desktop.distance+.012:2.4;
+  let best=Math.min(maxDistance,2.4),target=null;
+  for(const [id,{min,max}] of targetBounds){
+    if(!visibleEquipment.has(id))continue;
+    const distance=rayBox(ray,min,max);
+    if(distance<best){best=distance;target=id;}
+  }
+  return target;
+}
+function turnView(delta){
+  yaw+=delta;
+  if(seated)chairDegrees=(chairDegrees+delta*180/Math.PI+360)%360;
+}
+function toggleSeat(){
+  if(!presets[mode])return;
+  if(seated){
+    seated=false;
+    ({eye,yaw,pitch}=standingPose);
+    standingPose=null;
+  }else{
+    standingPose={eye:eye.slice(),yaw,pitch};
+    seated=true;
+    eye=[chairPosition.x,1.18,chairPosition.z];
+    yaw=1.01+chairDegrees*Math.PI/180-Math.PI;
+    pitch=-.23;
+  }
+  syncSeat();
+  keys.clear();resetStick();
+  dirty=true;
+}
+function syncSeat(){
+  seatButton.textContent=seated?'Stand up':'Sit down';
+  seatButton.setAttribute('aria-pressed',String(seated));
+  seatedHint.hidden=!seated;
+  walkingHint.hidden=seated;
+}
+function interact(event,chair){
+  const item=pickDeskItem(event);
+  if(item?.startsWith('keyboard'))playClick(false);
+  else if(item?.startsWith('mouse'))playClick(true);
+  else if(item==='coolingPlate'||item==='warmerPlate'){
+    if(sip)return;
+    sip={id:item,index:item==='coolingPlate'?0:1,start:performance.now()};
+    playSip();
+    interactionNote.textContent=item==='coolingPlate'?'Sipping cool water':'Sipping warm water';
+    interactionNote.hidden=false;
+  }else if(chair&&!seated)toggleSeat();
+}
+function updateSip(now){
+  sipOffsets.fill(0);
+  if(!sip)return;
+  const t=(now-sip.start)/1000;
+  if(t>1.75||!visibleEquipment.has(sip.id)){
+    sip=null;interactionNote.hidden=true;
+    return;
+  }
+  const smooth=x=>{const k=Math.max(0,Math.min(1,x));return k*k*(3-2*k);};
+  const raise=smooth(t/.50)*(1-smooth((t-1.10)/.65));
+  const tilt=.94*smooth((t-.43)/.22)*(1-smooth((t-.94)/.28));
+  const f=cameraForward(),start=cupCenters[sip.index];
+  const mouth=[eye[0]+f[0]*.24,eye[1]+f[1]*.24-.102,eye[2]+f[2]*.24];
+  // Lift before moving toward the viewer so the cup clears its plate.
+  const extra=.18*Math.sin(Math.PI*raise);
+  if(!reduced)sipOffsets.set([(mouth[0]-start[0])*raise,
+    (mouth[1]-start[1])*raise+extra,(mouth[2]-start[2])*raise,tilt],sip.index*4);
+}
+
 
 function updateStick(event){
   const bounds=joystick.getBoundingClientRect();
@@ -1304,6 +1474,8 @@ function resetStick(){
 }
 function setView(value){
   mode=value;view.value=value;keys.clear();
+  seated=false;standingPose=null;syncSeat();
+  sip=null;interactionNote.hidden=true;
   resetStick();drag=null;
   const preset=presets[value];
   if(preset){
@@ -1312,6 +1484,7 @@ function setView(value){
     doorAngle=doorGoal=preset.door;
   }
   chairControls.hidden=value==='ceiling';
+  seatButton.hidden=!preset;
   hint.hidden=!preset;joystick.hidden=!preset;doorButton.hidden=!preset;caption.hidden=!!preset;
   caption.textContent=value==='plan'?'Floor plan · 3 m × 3 m interior':'Reflected ceiling plan';
   doorButton.textContent=doorGoal>.5?'Close door':'Open door';
@@ -1357,24 +1530,31 @@ for(const event of ['pointerup','pointercancel','lostpointercapture']){
 }
 canvas.addEventListener('pointerdown',event=>{
   if(!presets[mode]||drag||event.button!==0)return;
-  drag={id:event.pointerId,x:event.clientX,y:event.clientY,chair:grabChair(event)};
+  drag={id:event.pointerId,x:event.clientX,y:event.clientY,
+    travel:0,chair:seated?null:grabChair(event)};
   canvas.setPointerCapture(event.pointerId);
 });
 canvas.addEventListener('pointermove',event=>{
   if(!drag||event.pointerId!==drag.id)return;
-  if(drag.chair){
+  const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+  drag.x=event.clientX;drag.y=event.clientY;
+  drag.travel+=Math.hypot(dx,dy);
+  if(drag.chair&&drag.travel>5){
     const hit=projectToHeight(pointerRay(event),drag.chair.height);
     if(hit)moveChair(hit.x+drag.chair.xOffset,hit.z+drag.chair.zOffset);
     return;
   }
-  yaw-=(event.clientX-drag.x)*.005;
-  pitch=Math.max(-1.48,Math.min(1.48,pitch+(event.clientY-drag.y)*.005));
-  drag.x=event.clientX;
-  drag.y=event.clientY;
+  if(!drag.chair){
+    turnView(-dx*.005);
+    pitch=Math.max(-1.48,Math.min(1.48,pitch+dy*.005));
+  }
 });
 for(const event of ['pointerup','pointercancel','lostpointercapture']){
   canvas.addEventListener(event,pointer=>{
-    if(drag?.id===pointer.pointerId)drag=null;
+    if(drag?.id!==pointer.pointerId)return;
+    if(event==='pointerup'&&drag.travel<=5&&Number.isFinite(pointer.clientX))interact(pointer,drag.chair);
+    drag=null;
+    dirty=true;
   });
 }
 
@@ -1437,17 +1617,8 @@ function grabChair(event){
   const ray=pointerRay(event);
   const min=[chairPosition.x-chairRadius,.04,chairPosition.z-chairRadius];
   const max=[chairPosition.x+chairRadius,1.045,chairPosition.z+chairRadius];
-  let near=.041,far=6;
-  for(let i=0;i<3;i++){
-    if(Math.abs(ray[i])<.0001){
-      if(eye[i]<min[i]||eye[i]>max[i])return null;
-      continue;
-    }
-    const a=(min[i]-eye[i])/ray[i],b=(max[i]-eye[i])/ray[i];
-    near=Math.max(near,Math.min(a,b));
-    far=Math.min(far,Math.max(a,b));
-    if(near>far)return null;
-  }
+  const near=rayBox(ray,min,max);
+  if(near>2.4)return null;
   const desk=projectToHeight(ray,.761);
   if(desk&&desk.distance<near&&insideDesktop(desk.x,desk.z))return null;
   return {
@@ -1507,20 +1678,23 @@ function frame(now){
   const animated=doorAngle!==doorGoal;
   const lavaActive=!reduced&&!!presets[mode];
   if(lavaActive)updateLava(dt,now/1000);
-  const changed=keys.size>0||animated||stick.right||stick.forward||
+  const changed=keys.size>0||animated||sip||stick.right||stick.forward||
     (lavaActive&&now-lastLavaPaint>=32);
   const scale=Math.min(devicePixelRatio,1.6);
   const w=Math.max(1,Math.round(canvas.clientWidth*scale)),h=Math.max(1,Math.round(canvas.clientHeight*scale));
   const resized=canvas.width!==w||canvas.height!==h;
   if(resized){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);}
   if(changed||resized||lastMode!==mode||frames===0||dirty){
-    if( keys.has('arrowleft'))yaw-=1.6*dt;
-    if( keys.has('arrowright'))yaw+=1.6*dt;
+    if(keys.has('arrowleft'))turnView(-1.6*dt);
+    if(keys.has('arrowright'))turnView(1.6*dt);
     if( keys.has('arrowup'))pitch=Math.min(1.48,pitch+1.2*dt);
     if( keys.has('arrowdown'))pitch=Math.max(-1.48,pitch-1.2*dt);
     const forward=Number(keys.has('w'))-Number(keys.has('s'))+stick.forward;
     const right=Number(keys.has('d'))-Number(keys.has('a'))+stick.right;
-    if(forward||right){
+    if(seated){
+      if(right)turnView(right*1.6*dt);
+      if(forward)pitch=Math.max(-1.48,Math.min(1.48,pitch+forward*.8*dt));
+    }else if(forward||right){
       const speed=1.18*dt/Math.max(1,Math.hypot(forward,right));
       const dx=(Math.sin(yaw)*forward+Math.cos(yaw)*right)*speed;
       const dz=(-Math.cos(yaw)*forward+Math.sin(yaw)*right)*speed;
@@ -1547,6 +1721,8 @@ function frame(now){
     gl.uniformMatrix4fv(uniforms.projection,false,matrix);
     gl.uniform3fv(uniforms.eye,position);
     gl.uniform3fv(uniforms['lavaOffsets[0]'],lavaOffsets);
+    updateSip(now);
+    gl.uniform4fv(uniforms['sipOffsets[0]'],sipOffsets);
     lastLavaPaint=now;
     gl.uniform1i(uniforms.plan,orthographic);
     gl.uniform1f(uniforms.doorAngle,mode==='plan'?1.45:doorAngle);
@@ -1575,9 +1751,11 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 let lastMode,dirty=true;
+seatButton.addEventListener('click',toggleSeat);
 for(const [id,step] of [['#chair-left',-15],['#chair-right',15]]){
   document.querySelector(id).addEventListener('click',()=>{
-    chairDegrees=(chairDegrees+step+360)%360;
+    if(seated)turnView(step*Math.PI/180);
+    else chairDegrees=(chairDegrees+step+360)%360;
     dirty=true;
   });
 }
