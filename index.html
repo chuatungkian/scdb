@@ -638,9 +638,39 @@ function carton(x,y,z,w,h,d,cardboard){
   }
 }
 for(let i=0;i<rackLevels.length;i++){
+  if(i===rackLevels.length-3)continue;
   const y=rackLevels[i]+.0075;
-  carton(shelfX-.165,y,shelfZ-.009,.276,.176+(i%2)*.021,.294,'#b68c5c');
-  carton(shelfX+.165,y,shelfZ+.012,.289,.153+((i+1)%2)*.034,.276,'#c9a373');
+  carton(shelfX-.165,y,shelfZ-.009,.276,2*(.176+(i%2)*.021),.294,'#b68c5c');
+  carton(shelfX+.165,y,shelfZ+.012,.289,2*(.153+((i+1)%2)*.034),.276,'#c9a373');
+}
+
+// Third tier from the top. The spines face the aisle, held by steel L-shaped bookends.
+const bookShelfY=rackLevels[rackLevels.length-3]+.0075;
+const bookStart=shelfLeft+.034,bookEnd=shelfRight-.034;
+const bookFront=shelfFront+.049;
+const bookColors=['#444c61','#6d7889','#a65d4a','#b38a51','#54776d','#716681',
+  '#526784','#95775d','#557781','#844d60','#607867','#334a54'];
+const bookWidths=[.030,.022,.047,.035,.028,.040,.022,.031,.044,.026,.031,.041,.036,.027,.037,.025,.047,.031,.030,.025];
+const totalBookWidth=bookWidths.reduce((sum,width)=>sum+width,0);
+let nextSpine=bookStart;
+for(const [i,weight] of bookWidths.entries()){
+  const width=(bookEnd-bookStart)*weight/totalBookWidth;
+  const h=.163+(.014*((i*7)%9)),d=.137+(.010*((i*3)%7));
+  const x=nextSpine+width/2,frontEdge=bookFront+(i%3)*.0026,z=frontEdge+d/2;
+  const cloth=bookColors[(i*7)%bookColors.length],gilt=i%3===0?'#ddc08b':'#cdc5b3';
+  block(x,bookShelfY+h/2,z,width-.001,h,d,cloth);
+  block(x,bookShelfY+h-.005,z+.005,width-.006,.012,d-.016,'#e2d8ba');
+  for(const y of [h*.20,h*.73]){
+    block(x,bookShelfY+y,frontEdge-.0007,width*.65,.003,.0014,gilt);
+  }
+  if(i%2===0)block(x,bookShelfY+.029,frontEdge-.0008,width*.55,.013,.0017,'#ccb393');
+  nextSpine+=width;
+}
+for(const side of [-1,1]){
+  const x=side<0?bookStart-.003:bookEnd+.003,z=bookFront+.079;
+  block(x-side*.024,bookShelfY+.002,z,.054,.004,.146,'#383f43',4);
+  block(x,bookShelfY+.089,z,.006,.178,.146,'#383f43',4);
+  block(x+side*.005,bookShelfY+.174,z,.014,.008,.145,'#3d454a',4);
 }
 
 function chair(x,z,angle,main){
