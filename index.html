@@ -121,6 +121,10 @@ canvas:active{cursor:grabbing}
     <button type="button" data-room-action="mouse4">Return mouse</button>
     <button type="button" data-room-action="coolingPlate">Sip cool water</button>
     <button type="button" data-room-action="warmerPlate">Sip warm water</button>
+    <button type="button" data-cabinet-door="3" aria-pressed="false">Cabinet door 1</button>
+    <button type="button" data-cabinet-door="2" aria-pressed="false">Cabinet door 2</button>
+    <button type="button" data-cabinet-door="1" aria-pressed="false">Cabinet door 3</button>
+    <button type="button" data-cabinet-door="0" aria-pressed="false">Cabinet door 4</button>
   </div>
 </details>
 <div class="chair-controls" id="chair-controls" role="group" aria-label="Rotate chair">
@@ -148,6 +152,7 @@ const seatButton=document.querySelector('#chair-seat');
 const interactMenu=document.querySelector('#interact-menu');
 const interactSeat=document.querySelector('#interact-seat');
 const deskActionButtons=Array.from(document.querySelectorAll('[data-room-action]'));
+const cabinetButtons=Array.from(document.querySelectorAll('[data-cabinet-door]'));
 const seatedHint=document.querySelector('#seated-hint');
 const walkingHint=document.querySelector('#walking-hint');
 const interactionNote=document.querySelector('#interaction-note');
@@ -186,13 +191,22 @@ uniform float chairRotation;
 uniform vec3 lavaOffsets[9];
 uniform vec3 cupCenters[2];
 uniform vec4 sipOffsets[2];
+uniform vec3 cabinetPivots[4];
+uniform float cabinetAngles[4];
 uniform vec3 eye;
 out vec3 world, nrm, rgb;
 out vec2 coord;
 flat out int kind;
 void main(){
   world=position; nrm=normal; rgb=color; coord=uv; kind=int(mod(material,32.0));
-  if(material>=128.0){
+  if(material>=192.0){
+    int door=int((material-192.0)/32.0);
+    vec3 pivot=cabinetPivots[door];
+    float c=cos(cabinetAngles[door]),s=sin(cabinetAngles[door]);
+    mat2 swing=mat2(c,s,-s,c);
+    world.xz=pivot.xz+swing*(world.xz-pivot.xz);
+    nrm.xz=swing*nrm.xz;
+  }else if(material>=128.0){
     int cup=int((material-128.0)/32.0);
     vec4 pose=sipOffsets[cup];
     float c=cos(pose.w),s=sin(pose.w);
@@ -331,7 +345,7 @@ gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));
 gl.linkProgram(program);
 if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
 gl.useProgram(program);
-const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','cupCenters[0]','sipOffsets[0]','oak','banner','screens','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
+const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','cupCenters[0]','sipOffsets[0]','cabinetPivots[0]','cabinetAngles[0]','oak','banner','screens','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
 
 function art(width,height,draw){
   const surface=document.createElement('canvas');
@@ -744,20 +758,34 @@ positions(-1.235,filingCenter,-Math.PI/2,()=>{
   tube([.17,1.19,.252],[.17,1.19,.266],.013,.013,skin.metal,4);
 });
 
-// Four-door storage runs to the back wall.
+// The four leaves conceal three empty shelf levels in the matching cabinet finish.
 const cabinetEnd=.02;
 const cabinetLength=cabinetEnd-back;
 const cabinetCenter=(back+cabinetEnd)/2;
 const cabinetDoorWidth=cabinetLength/4;
-block(1.2735,.767,cabinetCenter,.453,1.535,cabinetLength,skin.cabinet);
+const cabinetFinish='#ddddcf';
+const cabinetPivots=[];
+const cabinetAngles=new Float32Array(4),cabinetGoals=new Float32Array(4);
+const cabinetSwing=Math.PI*.47;
+block(1.489,.767,cabinetCenter,.022,1.535,cabinetLength,cabinetFinish);
 block(1.253,1.54,cabinetCenter,.494,.023,cabinetLength,skin.pale);
 block(1.267,.051,cabinetCenter,.466,.102,cabinetLength,'#b7b7a9');
-block(1.046,.806,cabinetCenter,.010,1.410,cabinetLength-.004,'#a6a89c');
+block(1.269,.109,cabinetCenter,.454,.023,cabinetLength,cabinetFinish);
+for(let i=0;i<=4;i++){
+  const z=Math.max(back+.008,Math.min(cabinetEnd-.008,back+cabinetDoorWidth*i));
+  block(1.268,.819,z,.450,1.42,.016,cabinetFinish);
+}
+for(const y of [.435,.766,1.097]){
+  block(1.274,y,cabinetCenter,.429,.019,cabinetLength-.025,cabinetFinish);
+}
 for(let i=0;i<4;i++){
   const z=back+cabinetDoorWidth*(i+.5);
-  block(1.028,.806,z,.031,1.403,cabinetDoorWidth-.012,'#ddddcf');
-  tube([1.012,.972,z],[1.007,.972,z],.012,.012,skin.metal,4);
-  tube([1.005,.970,z],[1.000,.927,z+.005],.005,.004,skin.dark);
+  cabinetPivots.push([1.028,0,z-(cabinetDoorWidth-.012)/2]);
+  const material=192+i*32;
+  block(1.028,.806,z,.031,1.403,cabinetDoorWidth-.012,cabinetFinish,material);
+  const lock=z+cabinetDoorWidth*.25;
+  tube([1.012,.972,lock],[1.007,.972,lock],.012,.012,skin.metal,material+4);
+  tube([1.005,.970,lock],[1.000,.927,lock+.005],.005,.004,skin.dark,material);
 }
 // Cabinet display, built in local coordinates above the cabinet top.
 function spin(profile,color,material=0,sides=32,offset=[0,0,0]){
@@ -1349,6 +1377,7 @@ for(const [name,data] of Object.entries(geometry)){
 gl.uniform3fv(uniforms.hinge,hinge);
 gl.uniform2f(uniforms.chairPivot,chairHome.x,chairHome.z);
 gl.uniform3fv(uniforms['cupCenters[0]'],new Float32Array(cupCenters.flat()));
+gl.uniform3fv(uniforms['cabinetPivots[0]'],new Float32Array(cabinetPivots.flat()));
 gl.enable(gl.DEPTH_TEST);
 gl.clearColor(.31,.31,.285,1);
 
@@ -1385,17 +1414,67 @@ function audioContext(){
     return soundContext;
   }catch{return null;}
 }
-function playClick(mouse){
+const soundSamples=new Map();
+const soundDurations={mouse:.10,key:.135,step0:.19,step1:.195,step2:.175,door:.34,cabinet:.22};
+function soundSample(audio,name){
+  if(soundSamples.has(name))return soundSamples.get(name);
+  const rate=audio.sampleRate,length=Math.ceil(rate*soundDurations[name]);
+  const buffer=audio.createBuffer(1,length,rate),wave=buffer.getChannelData(0);
+  let seed=17+name.charCodeAt(name.length-1)*313,low=0,prev=0;
+  const die=(t,falloff)=>t<0?0:Math.exp(-t*falloff);
+  const tone=(f,t,falloff)=>Math.sin(2*Math.PI*f*t)*die(t,falloff);
+  const step=name.startsWith('step'),j=step?Number(name.at(-1)):0;
+  for(let i=0;i<length;i++){
+    seed=(1664525*seed+1013904223)>>>0;
+    const noise=seed/2147483648-1;
+    low+=.11*(noise-low);
+    const sharp=noise-prev;prev=noise;
+    const t=i/rate;
+    let value=0;
+    if(name==='mouse'){
+      const release=t-.036;
+      value=.23*sharp*(die(t,620)+.57*die(release,610))
+        +.13*tone(2400,t,260)+.075*tone(3010,release,300);
+    }else if(name==='key'){
+      const release=t-.052;
+      value=.12*sharp*(die(t,335)+.54*die(release,410))
+        +.21*tone(610,t,98)+.10*tone(1320,t,160)+.12*tone(910,release,130)
+        +.15*low*die(t,95);
+    }else if(step){
+      const toe=t-.049;
+      value=.18*tone(57+5*j,t,37)+.105*tone(94+5*j,toe,48)
+        +.18*low*(die(t,32)+.52*die(toe,28))+.024*noise*die(toe,32);
+    }else{
+      const latch=t-.040;
+      const scale=name==='cabinet'?.54:1;
+      value=scale*(.29*tone(name==='cabinet'?122:64,t,24)+.12*tone(142,t,37)
+        +.15*low*die(t,36)+.105*sharp*die(latch,490)+.085*tone(770,latch,125));
+    }
+    wave[i]=value*Math.min(1,(length-1-i)/(rate*.010));
+  }
+  soundSamples.set(name,buffer);
+  return buffer;
+}
+function playRoomSound(name){
   const audio=audioContext();
-  if(!audio)return;
-  const start=audio.currentTime,tone=audio.createOscillator(),level=audio.createGain();
-  tone.type=mouse?'triangle':'square';
-  tone.frequency.setValueAtTime(mouse?1180:785,start);
-  tone.frequency.exponentialRampToValueAtTime(mouse?300:190,start+.035);
-  level.gain.setValueAtTime(.085,start);
-  level.gain.exponentialRampToValueAtTime(.001,start+.050);
-  tone.connect(level);level.connect(audio.destination);
-  tone.start(start);tone.stop(start+.054);
+  if(!audio||audio.state==='suspended'&&name.startsWith('step'))return;
+  try{
+    const source=audio.createBufferSource();
+    source.buffer=soundSample(audio,name);
+    source.connect(audio.destination);
+    source.start(audio.currentTime);
+  }catch{}
+}
+let stride=0,lastWalk=-1000,stepNumber=0;
+function walkSound(distance,now){
+  if(distance<=.0001)return;
+  if(now-lastWalk>240)stride=.37;
+  lastWalk=now;
+  stride+=distance;
+  if(stride>=.49){
+    stride-=.49;
+    playRoomSound('step'+stepNumber++%3);
+  }
 }
 function playSip(){
   const audio=audioContext();
@@ -1417,14 +1496,14 @@ function cameraForward(){
   const c=Math.cos(pitch);
   return [Math.sin(yaw)*c,Math.sin(pitch),-Math.cos(yaw)*c];
 }
-function rayBox(ray,min,max){
+function rayBox(ray,min,max,origin=eye){
   let near=.041,far=5;
   for(let axis=0;axis<3;axis++){
     if(Math.abs(ray[axis])<.0001){
-      if(eye[axis]<min[axis]||eye[axis]>max[axis])return Infinity;
+      if(origin[axis]<min[axis]||origin[axis]>max[axis])return Infinity;
       continue;
     }
-    const a=(min[axis]-eye[axis])/ray[axis],b=(max[axis]-eye[axis])/ray[axis];
+    const a=(min[axis]-origin[axis])/ray[axis],b=(max[axis]-origin[axis])/ray[axis];
     near=Math.max(near,Math.min(a,b));far=Math.min(far,Math.max(a,b));
     if(near>far)return Infinity;
   }
@@ -1482,7 +1561,7 @@ function useDeskItem(item){
   if(!presets[mode]||!visibleEquipment.has(item))return;
   if(item.startsWith('keyboard')||item.startsWith('mouse')){
     const mouse=item.startsWith('mouse');
-    playClick(mouse);
+    playRoomSound(mouse?'mouse':'key');
     if(!sip)showInteraction(mouse?'Mouse clicked':'Key pressed');
     return;
   }
@@ -1496,6 +1575,10 @@ function interact(event,chair){
   const item=pickDeskItem(event);
   if(item)useDeskItem(item);
   else if(chair&&!seated)toggleSeat();
+  else {
+    const cabinet=pickCabinet(event);
+    if(cabinet>=0)toggleCabinet(cabinet);
+  }
 }
 function syncDeskActions(){
   for(const button of deskActionButtons)button.disabled=!visibleEquipment.has(button.dataset.roomAction);
@@ -1566,9 +1649,13 @@ function setView(value){
 }
 function toggleDoor(){
   if(!presets[mode])return;
+  audioContext();
   doorGoal=doorGoal>.5?0:1.45;
   doorButton.textContent=doorGoal>.5?'Close door':'Open door';
-  if(reduced)doorAngle=doorGoal;
+  if(reduced){
+    if(doorGoal===0&&doorAngle!==0)playRoomSound('door');
+    doorAngle=doorGoal;
+  }
   dirty=true;
 }
 setView('entry');
@@ -1580,7 +1667,11 @@ document.addEventListener('keydown',event=>{
   const key=event.key.toLowerCase();
   if(['w','a','s','d','arrowleft','arrowright','arrowup','arrowdown','e'].includes(key)){
     event.preventDefault();
-    if(key==='e'){if(!event.repeat)toggleDoor();}else keys.add(key);
+    if(key==='e'){if(!event.repeat)toggleDoor();}
+    else{
+      if(!event.repeat&&!seated&&'wasd'.includes(key))audioContext();
+      keys.add(key);
+    }
   }
 });
 document.addEventListener('keyup',event=>keys.delete(event.key.toLowerCase()));
@@ -1590,6 +1681,7 @@ window.addEventListener('blur',()=>{
 joystick.addEventListener('pointerdown',event=>{
   if(!presets[mode]||stick.id!==null||event.button!==0)return;
   event.preventDefault();
+  if(!seated)audioContext();
   stick.id=event.pointerId;
   joystick.dataset.active='';
   joystick.setPointerCapture(event.pointerId);
@@ -1600,7 +1692,10 @@ joystick.addEventListener('pointermove',event=>{
 });
 for(const event of ['pointerup','pointercancel','lostpointercapture']){
   joystick.addEventListener(event,pointer=>{
-    if(pointer.pointerId===stick.id)resetStick();
+    if(pointer.pointerId===stick.id){
+      if(event==='pointerup'&&!seated)audioContext();
+      resetStick();
+    }
   });
 }
 canvas.addEventListener('pointerdown',event=>{
@@ -1654,7 +1749,7 @@ function chairCanRoll(x,z){
   if(Math.hypot(x-eye[0],z-eye[2])<chairRadius+.115)return false;
   if(obstacles.some(bounds=>overlaps(x,z,chairRadius,bounds)))return false;
   if(overlaps(x,z,chairRadius,deskCurveBounds))return false;
-  return clearsDoor(x,z,chairRadius);
+  return clearsDoor(x,z,chairRadius)&&clearsCabinetDoors(x,z,chairRadius);
 }
 function moveChair(x,z){
   x=Math.max(-halfWidth+chairRadius,Math.min(halfWidth-chairRadius,x));
@@ -1715,13 +1810,71 @@ function canStand(x,z){
   if(Math.abs(z-front-.06)<radius+.068 && (x<leftJamb+radius+.022||x>rightJamb-radius-.022))return false;
   if(obstacles.some(bounds=>overlaps(x,z,radius,bounds)))return false;
   if(Math.hypot(x-chairPosition.x,z-chairPosition.z)<chairRadius+radius)return false;
-  return clearsDoor(x,z,radius);
+  return clearsDoor(x,z,radius)&&clearsCabinetDoors(x,z,radius);
 }
 function clearsDoor(x,z,radius){
   const dx=x-hinge[0],dz=z-hinge[2],c=Math.cos(doorAngle),s=Math.sin(doorAngle);
   const along=dx*c+dz*s,across=-dx*s+dz*c;
   return !(along<radius&&along>doorEnd-hinge[0]-radius&&Math.abs(across)<radius+.022);
 }
+function cabinetLocal(x,z,i,angle=cabinetAngles[i]){
+  const [px,,pz]=cabinetPivots[i],dx=x-px,dz=z-pz;
+  const c=Math.cos(angle),s=Math.sin(angle);
+  return [px+dx*c+dz*s,pz-dx*s+dz*c];
+}
+function cabinetDoorHits(x,z,radius,i,angle){
+  const [rx,rz]=cabinetLocal(x,z,i,angle),[px,,pz]=cabinetPivots[i];
+  const dx=Math.max(Math.abs(rx-px)-.027,0);
+  const dz=Math.max(pz-rz,rz-(pz+cabinetDoorWidth-.012),0);
+  return Math.hypot(dx,dz)<radius;
+}
+function clearsCabinetDoors(x,z,radius){
+  return !cabinetPivots.some((_,i)=>cabinetDoorHits(x,z,radius,i));
+}
+function pickCabinet(event){
+  if(eye[2]>=front)return -1;
+  const ray=pointerRay(event),desk=projectToHeight(ray,deskSurface);
+  let nearest=desk&&insideDesktop(desk.x,desk.z)?Math.min(2.4,desk.distance):2.4;
+  let picked=-1;
+  for(let i=0;i<cabinetPivots.length;i++){
+    const [x,,z]=cabinetPivots[i];
+    const [localX,localZ]=cabinetLocal(eye[0],eye[2],i);
+    const [endX,endZ]=cabinetLocal(eye[0]+ray[0],eye[2]+ray[2],i);
+    const hit=rayBox([endX-localX,ray[1],endZ-localZ],
+      [x-.04,.102,z-.01],[x+.025,1.51,z+cabinetDoorWidth-.002],[localX,eye[1],localZ]);
+    if(hit<nearest){nearest=hit;picked=i;}
+  }
+  return picked;
+}
+function toggleCabinet(i){
+  if(!presets[mode])return;
+  audioContext();
+  const open=cabinetGoals[i]===0;
+  const goal=open?cabinetSwing:0;
+  // Use the same floating-point target for interpolation and completion.
+  cabinetGoals[i]=goal;
+  if(reduced&&!cabinetDoorHits(eye[0],eye[2],.115,i,cabinetGoals[i])){
+    cabinetAngles[i]=cabinetGoals[i];
+    if(!open)playRoomSound('cabinet');
+  }
+  for(const button of cabinetButtons){
+    if(Number(button.dataset.cabinetDoor)===i)button.setAttribute('aria-pressed',String(open));
+  }
+  dirty=true;
+}
+function updateCabinets(dt){
+  for(let i=0;i<cabinetAngles.length;i++){
+    const remaining=cabinetGoals[i]-cabinetAngles[i];
+    if(remaining===0)continue;
+    const next=Math.abs(remaining)<=2.65*dt?cabinetGoals[i]:
+      cabinetAngles[i]+Math.sign(remaining)*2.65*dt;
+    if(cabinetDoorHits(eye[0],eye[2],.115,i,next))continue;
+    if(cabinetDoorHits(chairPosition.x,chairPosition.z,chairRadius,i,next))continue;
+    cabinetAngles[i]=next;
+    if(next===0)playRoomSound('cabinet');
+  }
+}
+
 function camera(position,look,up,proj){
   const z=unit(sub(position,look)),x=unit(cross(up,z)),y=cross(z,x);
   const basis=[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,position),-dot(y,position),-dot(z,position),1];
@@ -1760,7 +1913,8 @@ function frame(now){
   const animated=doorAngle!==doorGoal;
   const lavaActive=!reduced&&!!presets[mode];
   if(lavaActive)updateLava(dt,now/1000);
-  const changed=keys.size>0||animated||sip||(noteUntil&&now>=noteUntil)||stick.right||stick.forward||
+  const cabinetMoving=cabinetAngles.some((angle,i)=>angle!==cabinetGoals[i]);
+  const changed=keys.size>0||animated||cabinetMoving||sip||(noteUntil&&now>=noteUntil)||stick.right||stick.forward||
     (lavaActive&&now-lastLavaPaint>=32);
   const scale=Math.min(devicePixelRatio,1.6);
   const w=Math.max(1,Math.round(canvas.clientWidth*scale)),h=Math.max(1,Math.round(canvas.clientHeight*scale));
@@ -1780,13 +1934,17 @@ function frame(now){
       const speed=1.18*dt/Math.max(1,Math.hypot(forward,right));
       const dx=(Math.sin(yaw)*forward+Math.cos(yaw)*right)*speed;
       const dz=(-Math.cos(yaw)*forward+Math.sin(yaw)*right)*speed;
+      const [priorX,,priorZ]=eye;
       if(canStand(eye[0]+dx,eye[2]))eye[0]+=dx;
       if(canStand(eye[0],eye[2]+dz))eye[2]+=dz;
+      walkSound(Math.hypot(eye[0]-priorX,eye[2]-priorZ),now);
     }
     if(animated){
       const remaining=doorGoal-doorAngle;
-      doorAngle+=Math.sign(remaining)*Math.min(Math.abs(remaining),2.8*dt);
+      doorAngle=Math.abs(remaining)<=2.8*dt?doorGoal:doorAngle+Math.sign(remaining)*2.8*dt;
+      if(doorAngle===0)playRoomSound('door');
     }
+    if(cabinetMoving)updateCabinets(dt);
     const aspect=w/h, orthographic=!presets[mode];
     let matrix,position=eye;
     if(orthographic){
@@ -1805,6 +1963,7 @@ function frame(now){
     gl.uniform3fv(uniforms['lavaOffsets[0]'],lavaOffsets);
     updateSip(now);
     gl.uniform4fv(uniforms['sipOffsets[0]'],sipOffsets);
+    gl.uniform1fv(uniforms['cabinetAngles[0]'],cabinetAngles);
     lastLavaPaint=now;
     gl.uniform1i(uniforms.plan,orthographic);
     gl.uniform1f(uniforms.doorAngle,mode==='plan'?1.45:doorAngle);
@@ -1834,6 +1993,7 @@ function frame(now){
 }
 let lastMode,dirty=true;
 seatButton.addEventListener('click',toggleSeat);
+for(const button of cabinetButtons)button.addEventListener('click',()=>toggleCabinet(Number(button.dataset.cabinetDoor)));
 interactSeat.addEventListener('click',()=>{
   interactMenu.open=false;
   toggleSeat();
