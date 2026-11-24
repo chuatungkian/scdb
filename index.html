@@ -1424,6 +1424,16 @@ function soundSample(audio,name){
   const die=(t,falloff)=>t<0?0:Math.exp(-t*falloff);
   const tone=(f,t,falloff)=>Math.sin(2*Math.PI*f*t)*die(t,falloff);
   const step=name.startsWith('step'),j=step?Number(name.at(-1)):0;
+  const heelWidth=.0048+j*.00065,toeDelay=.043+j*.005;
+  const soleFilter=1-Math.exp(-2*Math.PI*125/rate);
+  const scuffFilter=1-Math.exp(-2*Math.PI*650/rate);
+  let soleNoise=0,scuffNoise=0;
+  // The padded heel and forefoot have short pressure pulses with no ringing.
+  const impact=(time,width)=>{
+    if(time<0)return 0;
+    const u=time/width;
+    return u*(1-u/2)*Math.exp(-u);
+  };
   for(let i=0;i<length;i++){
     seed=(1664525*seed+1013904223)>>>0;
     const noise=seed/2147483648-1;
@@ -1441,9 +1451,12 @@ function soundSample(audio,name){
         +.21*tone(610,t,98)+.10*tone(1320,t,160)+.12*tone(910,release,130)
         +.15*low*die(t,95);
     }else if(step){
-      const toe=t-.049;
-      value=.18*tone(57+5*j,t,37)+.105*tone(94+5*j,toe,48)
-        +.18*low*(die(t,32)+.52*die(toe,28))+.024*noise*die(toe,32);
+      const toe=t-toeDelay,scuff=toe-.020;
+      soleNoise+=soleFilter*(noise-soleNoise);
+      scuffNoise+=scuffFilter*(noise-scuffNoise);
+      value=(.99-j*.065)*impact(t,heelWidth)+.58*impact(toe,heelWidth*1.35)
+        +.36*soleNoise*(die(t,48)+.60*die(toe,52))
+        +.06*(scuffNoise-soleNoise)*Math.min(1,Math.max(0,scuff/.007))*die(scuff,58);
     }else{
       const latch=t-.040;
       const scale=name==='cabinet'?.54:1;
