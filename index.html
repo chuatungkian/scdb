@@ -1062,6 +1062,8 @@ for(const [x,z] of [[.866,-.621],[-.285,1.11]]){
 // Magnetic whiteboard on the left wall, with its face turned into the room.
 positions(-halfWidth,-.48,-Math.PI/2,()=>{
   const width=(front-back)/2, height=.91, center=1.97, rim=.017;
+  const wallTransform=transform;
+  transform=([x,y,z])=>wallTransform([x,y-height/2,z]);
   const surface=.024, frame='#b2b5b5';
   block(0,center,.008,width,height,.019,'#777c7d');
   block(0,center,.018,width-2*rim,height-2*rim,.012,'#f4f6f4');
