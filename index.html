@@ -1059,6 +1059,42 @@ for(const [x,z] of [[.866,-.621],[-.285,1.11]]){
     }
   }
 }
+// Magnetic whiteboard on the left wall, with its face turned into the room.
+positions(-halfWidth,-.48,-Math.PI/2,()=>{
+  const width=(front-back)/2, height=.91, center=1.97, rim=.017;
+  const surface=.024, frame='#b2b5b5';
+  block(0,center,.008,width,height,.019,'#777c7d');
+  block(0,center,.018,width-2*rim,height-2*rim,.012,'#f4f6f4');
+  for(const edge of [-1,1]){
+    block(edge*(width-rim)/2,center,.017,rim,height,.026,frame,4);
+    block(0,center+edge*(height-rim)/2,.017,width-2*rim,rim,.026,frame,4);
+  }
+  // A shallow aluminium marker rail along the lower edge.
+  block(.22,center-height/2+.006,.038,.56,.011,.060,frame,4);
+  block(.22,center-height/2+.014,.065,.56,.013,.006,frame,4);
+  const boardTransform=transform;
+  const notes=[
+    {x:-.48,y:2.21,w:.19,h:.23,angle:.065,paper:'#f7f0df',magnet:'#456884',lines:[.73,.89,.61,.77,.53]},
+    {x:-.24,y:2.13,w:.17,h:.17,angle:-.10,paper:'#f3e3a4',magnet:'#ad443c',lines:[.79,.65,.86,.49]},
+    {x:.30,y:2.20,w:.24,h:.22,angle:.043,paper:'#e8eff4',magnet:'#343e42',lines:[.67,.88,.71,.79,.59,.43]},
+    {x:.53,y:1.96,w:.16,h:.15,angle:-.08,paper:'#e6ebd7',magnet:'#61734d',lines:[.73,.86,.57]}
+  ];
+  for(const {x,y,w,h,angle,paper,magnet,lines} of notes){
+    const c=Math.cos(angle),s=Math.sin(angle);
+    transform=([u,v,d])=>boardTransform([x+u*c-v*s,y+u*s+v*c,d]);
+    block(.002,-.004,surface+.0004,w+.006,h+.006,.0008,'#c6c9c3');
+    block(0,0,surface+.0015,w,h,.003,paper);
+    block(-w*.13,h*.215,surface+.0033,w*.50,.005,.0006,'#67777f');
+    for(const [row,fraction] of lines.entries()){
+      const length=w*.76*fraction;
+      block(-w*.38+length/2,h*.105-row*h*.095,surface+.0033,length,.0025,.0006,'#848e8d');
+    }
+    const pinY=h/2-.014;
+    tube([0,pinY,surface+.003],[0,pinY,surface+.011],.013,.012,magnet,0,18);
+  }
+  transform=boardTransform;
+});
+
 // Wall switch plate, centred on the accessible wall beside the glazing.
 const switchX=(windowLeft-.99)/2;
 const switchHeight=1.15;
