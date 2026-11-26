@@ -213,7 +213,7 @@ uniform vec3 cupCenters[2];
 uniform vec4 sipOffsets[2];
 uniform vec3 cabinetPivots[4];
 uniform float cabinetAngles[4];
-uniform vec4 catPose[3];
+uniform vec4 catPose[4];
 mat2 turnCat(float a){return mat2(cos(a),-sin(a),sin(a),cos(a));}
 uniform vec3 eye;
 out vec3 world, nrm, rgb;
@@ -224,9 +224,16 @@ void main(){
   if(material>=320.0){
     int joint=int(material)-320;
     vec4 motion=catPose[1];
-    if(joint==1){
+    if(joint==1||joint==8){
+      if(joint==8){
+        float lid=catPose[3].x;
+        world.y=.280+(world.y-.280)*(1.-.93*lid);
+        world.z-=.006*lid;
+      }
       vec3 pivot=vec3(0.,.231,.123);
       world-=pivot;
+      mat2 tilt=turnCat(catPose[3].y);
+      world.xy=tilt*world.xy; nrm.xy=tilt*nrm.xy;
       mat2 nod=turnCat(motion.y),look=turnCat(motion.x);
       world.yz=nod*world.yz; nrm.yz=nod*nrm.yz;
       world.xz=look*world.xz; nrm.xz=look*nrm.xz;
@@ -1449,7 +1456,7 @@ positions(-.426,.166,Math.PI+.07,()=>{
 transform=p=>p;
 bucket='furniture';
 
-// Local +Z points toward the face. Material 320–327 identifies the joint.
+// Local +Z points toward the face. Material 320–328 identifies the joint.
 const catCoats=[
   ['#e2d8cb','#faf1e2','#a99b90','#a77a71','#b47d37'],
   ['#737a8b','#b6bdc9','#545b70','#846e79','#be842e'],
@@ -1485,44 +1492,52 @@ function modelPersian(coat,index){
     const side=i%2?1:-1,z=-.152+(i>>1)*.052;
     segment(0,[side*.065,.151,z],[side*.101,.104,z-.020],.022,.003,i%4?fur:shade,7);
   }
-  ball(1,0,.262,.136,.113,.100,.089,fur,20,12);
+  ball(1,0,.266,.127,.127,.112,.098,fur,24,14);
   for(const side of [-1,1]){
-    ball(1,side*.062,.231,.177,.060,.047,.052,ruff,14,8);
-    ball(1,side*.030,.224,.206,.043,.033,.032,ruff);
-    segment(1,[side*.071,.308,.122],[side*.084,.378,.119],.041,.005,fur,10);
-    segment(1,[side*.074,.330,.145],[side*.083,.369,.135],.019,.004,nose,9);
-    segment(1,[side*.078,.327,.154],[side*.089,.368,.149],.012,.002,ruff,7);
-    for(let i=0;i<4;i++)segment(1,[side*.075,.249-i*.013,.164],
-      [side*(.134-i*.009),.225-i*.016,.163-i*.004],.023,.001,i%2?fur:ruff,7);
-    const x=side*.046;
-    ball(1,x,.274,.204,.035,.031,.019,shade,16,8);
-    ball(1,x,.274,.218,.028,.026,.013,'#221d21',16,8);
-    ball(1,x,.274,.226,.021,.021,.009,iris,16,8);
-    ball(1,x,.274,.234,.011,.016,.004,'#16171a',12,8);
-    ball(1,x-.006,.283,.237,.005,.005,.002,'#fff8e7',8,5);
-    ball(1,x+.006,.268,.236,.002,.002,.001,'#e5e4dc',8,5);
-    for(let i=0;i<3;i++){
-      const y=.223-i*.008;
-      segment(1,[side*.040,y,.226],[side*.094,y+.011-i*.005,.235],.00095,.0008,ruff,5);
-      segment(1,[side*.094,y+.011-i*.005,.235],[side*(.160-i*.005),y+.019-i*.010,.230],.0008,.00025,ruff,5);
+    ball(1,side*.068,.228,.172,.066,.052,.061,ruff,18,11);
+    ball(1,side*.032,.219,.213,.043,.033,.031,ruff,16,9);
+    // Small, rounded ears sit low and wide in the coat.
+    ball(1,side*.092,.344,.119,.039,.047,.027,fur,16,10);
+    ball(1,side*.093,.353,.140,.024,.029,.009,nose,14,9);
+    ball(1,side*.089,.333,.146,.023,.012,.012,ruff);
+    for(let i=0;i<4;i++){
+      ball(1,side*(.111-i*.012),.237-i*.014,.163-i*.006,
+        .026,.026-i*.002,.028,i%3===0?fur:ruff);
     }
+
+    // The iris rim and two catchlights stay attached to the eye when it blinks.
+    const x=side*.055;
+    ball(8,x,.280,.209,.038,.037,.023,shade,20,11);
+    ball(8,x,.280,.222,.033,.032,.017,'#302527',20,11);
+    ball(8,x,.280,.231,.0265,.027,.012,iris,20,11);
+    ball(8,x,.281,.241,.017,.020,.006,'#1d191e',16,10);
+    ball(8,x-.008,.291,.247,.007,.007,.0025,'#fff9ef',12,7);
+    ball(8,x+.008,.274,.246,.003,.0035,.002,'#f5ecd7',10,6);
+    for(let i=0;i<3;i++){
+      const y=.222-i*.006;
+      segment(1,[side*.048,y,.242],[side*.096,y+.006-i*.003,.246],.00084,.00065,ruff,6);
+      segment(1,[side*.096,y+.006-i*.003,.246],
+        [side*(.152-i*.005),y+.012-i*.008,.237],.00065,.00022,ruff,6);
+    }
+    ball(1,side*.008,.244,.245,.009,.008,.006,nose,14,8);
+    segment(1,[0,.225,.247],[side*.012,.221,.245],.0017,.0014,'#654b4d',7);
+    segment(1,[side*.012,.221,.245],[side*.022,.227,.243],.0014,.0008,'#654b4d',7);
   }
-  ball(1,0,.243,.232,.023,.015,.010,nose,14,8);
-  segment(1,[0,.234,.238],[0,.218,.237],.002,.002,'#513b3d',6);
-  ball(1,0,.214,.232,.023,.005,.005,'#5e4946',12,6);
-  ball(1,0,.196,.210,.049,.024,.032,ruff);
+  ball(1,0,.239,.246,.012,.009,.006,nose,16,10);
+  segment(1,[0,.232,.249],[0,.225,.247],.0015,.0015,'#654b4d',7);
+  ball(1,0,.198,.209,.051,.028,.034,ruff,16,10);
   for(let joint=0;joint<4;joint++){
     const side=joint%2?1:-1,z=joint<2?.092:-.135, x=side*.066, part=2+joint;
     ball(part,x,.103,z,.045,.076,.043,fur,12,8);
     ball(part,x,.041,z+.004,.034,.047,.031,ruff);
-    ball(part,x,.024,z+.020,.039,.024,.046,ruff);
-    for(let i=-1;i<=1;i++)ball(part,x+i*.019,.019,z+.050,.012,.017,.016,ruff,8,5);
+    ball(part,x,.024,z+.020,.042,.024,.048,ruff);
+    for(let i=-1;i<=1;i++)ball(part,x+i*.016,.018,z+.050,.015,.015,.016,ruff,8,5);
   }
-  ball(6,0,.213,-.214,.050,.061,.097,fur,14,9);
-  ball(6,0,.259,-.288,.061,.081,.094,fur,14,9);
-  ball(7,0,.319,-.342,.061,.095,.064,shade,14,9);
-  ball(7,.010,.377,-.320,.058,.077,.059,fur,14,9);
-  ball(7,.022,.422,-.300,.045,.052,.049,ruff,12,8);
+  ball(6,0,.223,-.221,.055,.071,.099,fur,18,11);
+  ball(6,0,.272,-.280,.069,.098,.092,fur,18,12);
+  ball(7,0,.324,-.324,.069,.096,.074,fur,18,12);
+  ball(7,.008,.375,-.318,.066,.094,.067,fur,18,12);
+  ball(7,.017,.429,-.300,.051,.056,.052,fur,16,11);
   for(let i=0;i<8;i++){
     const a=i*Math.PI/4;
     segment(7,[Math.cos(a)*.032,.359+Math.sin(a)*.055,-.342],
@@ -2235,7 +2250,7 @@ function catInteract(event){
     const s=Math.sin(cat.heading),c=Math.cos(cat.heading);
     const origin=[eye[0]-cat.x,eye[1]-cat.y,eye[2]-cat.z];
     const local=([x,y,z])=>[x*c-z*s,y,x*s+z*c];
-    const hit=rayBox(local(ray),[-.125,0,-.24],[.125,.407,.245],local(origin));
+    const hit=rayBox(local(ray),[-.145,0,-.24],[.145,.414,.253],local(origin));
     if(hit<nearest){nearest=hit;picked=cat;}
   }
   if(!picked)return false;
@@ -2320,10 +2335,14 @@ function drawCats(now,plan){
       now<cat.attention?Math.max(-.33,Math.min(.17,-Math.atan2(eye[1]-cat.y-.25,catDistance(cat.x,cat.z,[eye[0],eye[2]]))*.39)):.042*Math.sin(t*2.7+cat.index);
     const stride=cat.jump?.48:walk*.51,s=Math.sin(phase),c=Math.sin(phase+.55);
     const bob=reduced||plan?0:.004*Math.sin(phase*2)*walk+.002*Math.sin(t*3+cat.index);
+    const blinkPhase=(t+cat.index*1.71)%(4.1+cat.index%3*.61);
+    const blink=reduced?0:Math.max(0,1-Math.abs((blinkPhase-.13)/.13));
+    const petTilt=cat.pet>now&&!reduced?.15*Math.sin(Math.PI*(cat.pet-now)/1_050):0;
     gl.uniform4fv(uniforms['catPose[0]'],[
       cat.x,cat.y+bob,cat.z,cat.heading,
       cat.head,nod,Math.sin(t*3.2+cat.index)*.24,Math.sin(t*4.6+cat.index)*.31,
-      stride*s,-stride*s,-stride*c,stride*c
+      stride*s,-stride*s,-stride*c,stride*c,
+      blink,petTilt,0,0
     ]);
     batch('cat'+cat.index%catCoats.length);
   }
