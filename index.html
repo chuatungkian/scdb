@@ -216,13 +216,13 @@ uniform float cabinetAngles[4];
 uniform vec4 catPose[4];
 mat2 turnCat(float a){return mat2(cos(a),-sin(a),sin(a),cos(a));}
 uniform vec3 eye;
-out vec3 world, nrm, rgb;
+out vec3 world, nrm, rgb, rest;
 out vec2 coord;
 flat out int kind;
 void main(){
-  world=position; nrm=normal; rgb=color; coord=uv; kind=int(mod(material,32.0));
+  world=position; rest=position; nrm=normal; rgb=color; coord=uv; kind=int(mod(material,32.0));
   if(material>=320.0){
-    int joint=int(material)-320;
+    int joint=int(material)%32;
     vec4 motion=catPose[1];
     if(joint==1||joint==8){
       if(joint==8){
@@ -255,7 +255,7 @@ void main(){
     mat2 facing=turnCat(catPose[0].w);
     world.xz=facing*world.xz;nrm.xz=facing*nrm.xz;
     world+=catPose[0].xyz;
-    kind=0;
+    kind=material>=384.0?22:material>=352.0?21:0;
   }else if(material>=192.0){
     int door=int((material-192.0)/32.0);
     vec3 pivot=cabinetPivots[door];
@@ -291,10 +291,10 @@ void main(){
 }`;
 const fragment = `#version 300 es
 precision highp float;
-in vec3 world,nrm,rgb;
+in vec3 world,nrm,rgb,rest;
 in vec2 coord;
 flat in int kind;
-uniform sampler2D oak,banner,screens;
+uniform sampler2D oak,banner,screens,portraitScreen;
 uniform vec2 chairShift;
 uniform vec3 eye;
 uniform bool plan;
@@ -339,7 +339,7 @@ void main(){
     pixel=vec4(t.rgb,t.a);return;
   }
   if(kind==5){pixel=vec4(base,1.);return;}
-  if(kind==12){pixel=texture(screens,coord);return;}
+  if(kind==12||kind==23){pixel=kind==12?texture(screens,coord):texture(portraitScreen,coord);return;}
   if(kind==8){
     float frosted=(1.-smoothstep(1.24,1.42,world.y))*smoothstep(.055,.32,world.y);
     vec3 clear=vec3(.35,.46,.42), frost=mix(vec3(.27,.43,.37),vec3(.58,.69,.65),smoothstep(.15,1.6,world.y));
@@ -374,6 +374,25 @@ void main(){
     float gleam=pow(max(0.,dot(eyeDirection,reflected)),10.);
     base+=.26*gleam+.10*abs(n.y);
   }
+  if(kind==21||kind==22){
+    // Fur remains in the cat's rest coordinates so the grain follows each joint.
+    vec2 p=vec2(rest.x+rest.z*.57,rest.y+rest.z*.17);
+    float wave=sin(p.y*74.+p.x*49.)*.004+sin(p.y*151.+rest.z*94.)*.002;
+    float grain=cloud(vec2((p.x+wave)*1160.,p.y*68.));
+    float clumps=cloud(vec2((p.x+wave)*260.,p.y*71.));
+    float soft=1.-smoothstep(.72,1.65,fwidth(p.x)*780.);
+    if(kind==22){
+      float shade=cloud(rest.xz*23.+vec2(rest.y*17.,-rest.y*25.));
+      float blaze=1.-smoothstep(.004,.017,abs(rest.x-.011+rest.y*.048));
+      base=mix(base,vec3(.56,.35,.23),smoothstep(.57,.76,shade)*.85+
+        blaze*smoothstep(.16,.22,rest.z)*.48);
+    }
+    if(!gl_FrontFacing)n=-n;
+    vec3 viewRay=normalize(eye-world);
+    float rim=pow(1.-abs(dot(viewRay,n)),2.7);
+    base*=.97+.09*(clumps-.5)+.19*soft*(grain-.5);
+    base+=rim*(.034+.09*soft*grain);
+  }
   if(kind==13||kind==14||kind==15){
     vec3 V=normalize(eye-world);
     if(!gl_FrontFacing)n=-n;
@@ -402,7 +421,7 @@ gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));
 gl.linkProgram(program);
 if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
 gl.useProgram(program);
-const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','cupCenters[0]','sipOffsets[0]','cabinetPivots[0]','cabinetAngles[0]','catPose[0]','oak','banner','screens','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
+const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','cupCenters[0]','sipOffsets[0]','cabinetPivots[0]','cabinetAngles[0]','catPose[0]','oak','banner','screens','portraitScreen','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
 
 function art(width,height,draw){
   const surface=document.createElement('canvas');
@@ -414,70 +433,169 @@ const sign=art(1024,384,(c,w,h)=>{
   c.textAlign='right';c.font='500 45px Arial';c.fillText('Director',w-45,185);
   c.font='500 44px Arial';c.fillText('Schools Corporate Development',w-45,241);
 });
-const screenArtwork=art(2048,320,(c,w,h)=>{
-  const panel=w/4;
-  const headings=['Research overview','Operations dashboard','Cohort analysis'];
-  const accents=['#217c76','#5267c4','#8756ac'];
-  const values=[[4,6,5,8,7,10,9,12,11,14],[9,5,8,7,12,9,11,13,12,15],[3,5,7,6,9,11,10,13,15,16]];
-  for(let i=0;i<3;i++){
-    const x=i*panel,a=accents[i],points=values[i];
-    c.fillStyle='#e7edf4';c.fillRect(x,0,panel,h);
-    c.fillStyle='#1c2a43';c.fillRect(x,0,panel,42);
-    c.fillStyle='#fff';c.font='bold 18px Arial';c.fillText(headings[i],x+19,27);
-    const stats=[['RECORDS','1,248'],['COMPLETION','86.4%'],['CHANGE','+12.6%']];
-    for(let j=0;j<stats.length;j++){
-      const left=x+16+j*164;
-      c.fillStyle='#f9fbff';c.fillRect(left,54,151,64);
-      c.fillStyle='#4b5b73';c.font='10px Arial';c.fillText(stats[j][0],left+10,71);
-      c.fillStyle=a;c.font='bold 24px Arial';c.fillText(stats[j][1],left+10,101);
-    }
-    c.fillStyle='#f9fbff';c.fillRect(x+16,129,299,173);c.fillRect(x+326,129,170,173);
-    c.fillStyle='#24364c';c.font='bold 13px Arial';
-    c.fillText('Trend over time',x+29,150);c.fillText('By category',x+340,150);
-    c.strokeStyle='#d7e0eb';c.lineWidth=1;
-    for(let y=174;y<279;y+=26){c.beginPath();c.moveTo(x+38,y);c.lineTo(x+298,y);c.stroke();}
-    c.strokeStyle=a;c.lineWidth=3;c.beginPath();
-    for(let j=0;j<points.length;j++){
-      const px=x+42+j*27,py=275-points[j]*6;
-      if(j===0)c.moveTo(px,py);else c.lineTo(px,py);
-    }
-    c.stroke();
-    for(let j=0;j<6;j++){
-      const bar=points[j+2]*6.5;
-      c.fillStyle=j%2===0?a:'#91a7ce';
-      c.fillRect(x+345+j*23,272-bar,15,bar);
-    }
-    c.fillStyle='#52657c';c.font='11px Arial';
-    c.fillText('JAN     FEB     MAR     APR     MAY     JUN',x+47,291);
-    c.fillText('A     B     C     D     E     F',x+344,291);
+const screenWidth=512,screenHeight=320;
+const screenArtwork=art(screenWidth*4,screenHeight,()=>{});
+const screenInk=screenArtwork.getContext('2d');
+const portraitArtwork=art(256,448,()=>{});
+const portraitInk=portraitArtwork.getContext('2d');
+const codeLines=[
+  ['const flock = scene.cats;', '#8bd5ca'],
+  ['function updateRoom(dt) {', '#c6a0f6'],
+  ['  updateLighting(dt);', '#cad7ed'],
+  ['  for (const cat of flock) {', '#c6a0f6'],
+  ['    cat.animate(dt);', '#8bd5ca'],
+  ['    cat.updateGaze(camera);', '#8bd5ca'],
+  ['  }', '#cad7ed'],
+  ['  return render(scene);', '#eed49f'],
+  ['}', '#cad7ed']
+];
+const deskText=(c,text,x,y,ink,font)=>{
+  c.fillStyle=ink;c.font=font;c.fillText(String(text),x,y);
+};
+function paintCode(c,x,time){
+  const phase=time%22, chars=Math.floor(phase*15);
+  const positions=codeLines.map(([line])=>line.length+3);
+  const total=positions.reduce((a,b)=>a+b,0);
+  const progress=Math.min(total,chars);
+  c.fillStyle='#111724';c.fillRect(x,0,512,320);
+  c.fillStyle='#242e40';c.fillRect(x,0,512,40);
+  deskText(c,'Codex',x+17,27,'#f4f6fb','bold 23px Arial');
+  deskText(c,progress<total?'●  Editing':'●  Checking',x+402,25,'#90cabc','bold 13px Arial');
+  c.fillStyle='#171e2c';c.fillRect(x+12,49,343,223);
+  c.fillStyle='#1d2535';c.fillRect(x+365,49,134,223);
+  deskText(c,'room.js',x+24,71,'#cad7ed','bold 14px Arial');
+  deskText(c,'SCENE CHECKS',x+374,70,'#93a9c3','bold 11px Arial');
+  let remaining=progress;
+  let active=progress===total?codeLines.length-1:0,column=0;
+  for(const [i,[line,tint]] of codeLines.entries()){
+    const y=94+i*19;
+    deskText(c,i+1,x+24,y,'#65748c','12px monospace');
+    const shown=line.slice(0,Math.max(0,remaining));
+    deskText(c,shown,x+47,y,tint,'14px monospace');
+    if(remaining>=0){active=i;column=shown.length;}
+    remaining-=positions[i];
   }
-  const x=3*panel;
-  c.fillStyle='#11151d';c.fillRect(x,0,panel,h);
-  c.fillStyle='#222a38';c.fillRect(x,0,panel,42);
-  c.fillStyle='#f2f6ff';c.font='bold 24px Arial';c.fillText('Codex',x+17,29);
-  c.font='13px Arial';c.fillStyle='#8edfb8';c.fillText('●  Working',x+401,26);
-  c.fillStyle='#191f2a';c.fillRect(x+14,55,302,228);c.fillRect(x+329,55,166,228);
-  c.fillStyle='#e2e8f4';c.font='bold 15px Arial';c.fillText('Office Room',x+27,79);
-  c.fillStyle='#97a9be';c.font='13px Arial';c.fillText('Editing Office-Room.html',x+27,103);
-  const code=['function updateScene(dt) {','  updateLava(dt);','  drawRoom(camera);','}','','$ node room-check.js','✓ Geometry and layout checks passed'];
-  c.font='12px monospace';
-  for(let i=0;i<code.length;i++){
-    c.fillStyle=i>=5?'#8edfb8':i%2?'#a0bae3':'#e2e8f4';
-    c.fillText(code[i],x+27,129+i*19);
+  if(progress<total&&Math.floor(time*2.6)%2===0){
+    c.fillStyle='#e9f1ff';c.fillRect(x+48+column*8.43,82+19*active,2,15);
   }
-  c.font='bold 13px Arial';c.fillStyle='#e7edf4';c.fillText('Scene checks',x+343,78);
-  for(let i=0;i<5;i++){
-    c.fillStyle='#7994df';c.fillRect(x+346,99+i*23,99+i*8,9);
+  const checks=['Fur shading','Head tracking','Paw contact','Room render'];
+  for(const [i,label] of checks.entries()){
+    const checked=phase>total/15+i*.75;
+    deskText(c,checked?'✓ '+label:'· '+label,x+375,103+i*26,
+      checked?'#8ee7c6':'#aebed4','12px Arial');
+    c.fillStyle=checked?'#559e8b':'#303b50';c.fillRect(x+375,109+i*26,108,3);
   }
-  c.font='12px Arial';c.fillStyle='#8edfb8';c.fillText('5 / 5 checks',x+343,246);
-  c.fillStyle='#283247';c.fillRect(x+15,292,480,17);
-  c.fillStyle='#b8c8e2';c.fillText('› Update the scene and verify the layout',x+24,305);
-});
+  c.fillStyle='#202b3e';c.fillRect(x+12,280,487,28);
+  deskText(c,progress<total?'› Updating scene animation':'› Running scene checks',
+    x+24,299,'#a8c0e0','12px monospace');
+}
+function paintSpreadsheet(c,time){
+  const x=0, phase=Math.floor(time*2);
+  c.fillStyle='#f4f8f5';c.fillRect(x,0,512,320);
+  c.fillStyle='#1b6f52';c.fillRect(x,0,512,42);
+  deskText(c,'Weekly tracker',15,27,'#fff','bold 22px Arial');
+  deskText(c,'LIVE',455,27,'#c3ffe3','bold 12px Arial');
+  const active=phase%8,focus=3+Math.floor(phase/8)%2;
+  const widths=[98,62,68,76,74,99], origin=28;
+  c.fillStyle='#e7f0e9';c.fillRect(0,44,512,38);
+  deskText(c,String.fromCharCode(65+focus)+(active+2),12,62,'#305245','bold 13px monospace');
+  deskText(c,'ƒx',73,62,'#48846e','bold 15px Arial');
+  deskText(c,focus===3?'=C'+(active+2)+'-'+(active+phase)%8:'=D'+(active+2)+'-B'+(active+2),105,62,'#1d5544','14px monospace');
+  const rowHeight=21,gridY=83;
+  const headers=['Team','Intake','Reviewed','Complete','Variance','Status'];
+  let left=origin;
+  for(const [i,width] of widths.entries()){
+    deskText(c,headers[i],left+5,99,'#245242','bold 12px Arial');left+=width;
+  }
+  const labels=['Curriculum','Student Dev','Operations','Partnerships','Staff Learning','Assessment','Programmes','Planning'];
+  for(const [row,label] of labels.entries()){
+    const y=gridY+(row+1)*rowHeight;
+    c.fillStyle=row%2?'#edf5ef':'#fff';c.fillRect(0,y,512,rowHeight-1);
+    const intake=44+row*7+(Math.floor(phase/5)+row*3)%13;
+    const reviewed=intake-5-row%3,complete=reviewed-(row+phase)%8;
+    const fields=[label,intake,reviewed,complete,(complete-intake).toString(),row%3?'On track':'Review'];
+    deskText(c,row+2,9,y+15,'#5f756d','11px monospace');
+    left=origin;
+    for(const [col,width] of widths.entries()){
+      if(row===active&&col===focus){
+        c.fillStyle='#afdcca';c.fillRect(left,y,width-1,rowHeight-1);
+        c.fillStyle='#268568';c.fillRect(left,y,width-1,2);c.fillRect(left+width-3,y,2,rowHeight-1);
+      }
+      c.fillStyle='#cfded5';c.fillRect(left-1,y,1,rowHeight);
+      deskText(c,fields[col],left+5,y+15,col===4?'#9a5750':'#243d35','12px Arial');
+      left+=width;
+    }
+  }
+  c.fillStyle='#d8ece1';c.fillRect(0,282,512,38);
+  deskText(c,'Overview  •  Week '+(Math.floor(phase/32)%4+1),15,305,'#235b48','bold 13px Arial');
+}
+function paintDashboard(c,slot,time){
+  const x=slot*screenWidth;
+  const color=slot===1?'#1f827b':'#6954b1';
+  const values=Array.from({length:11},(_,j)=>9+.64*j+3.0*Math.sin(time*.77+j*.92+slot)+1.8*Math.sin(time*.51-j*1.43));
+  c.fillStyle='#eaf0f7';c.fillRect(x,0,512,320);
+  c.fillStyle='#243752';c.fillRect(x,0,512,43);
+  deskText(c,slot===1?'Operations dashboard':'Cohort analysis',x+17,28,'#fff','bold 20px Arial');
+  const stats=[['RECORDS',Math.round(1248+time%60*3)],['COMPLETION',(85+values[3]*.24).toFixed(1)+'%'],['CHANGE','+'+values[9].toFixed(1)+'%']];
+  for(const [i,[label,metric]] of stats.entries()){
+    const left=x+15+i*164;
+    c.fillStyle='#fff';c.fillRect(left,53,153,65);
+    deskText(c,label,left+10,72,'#4b5c75','11px Arial');
+    deskText(c,metric,left+10,103,color,'bold 24px Arial');
+  }
+  c.fillStyle='#fff';c.fillRect(x+15,131,306,172);c.fillRect(x+332,131,165,172);
+  deskText(c,'Trend over time',x+29,155,'#344860','bold 13px Arial');
+  deskText(c,'By category',x+346,155,'#344860','bold 13px Arial');
+  c.fillStyle='#dfE7EF';
+  for(let y=177;y<275;y+=25)c.fillRect(x+32,y,270,1);
+  c.strokeStyle=color;c.lineWidth=3;c.beginPath();
+  for(const [i,value] of values.entries()){
+    const px=x+36+i*26,py=274-value*5.8;
+    if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+  }
+  c.stroke();
+  for(let i=0;i<6;i++){
+    const height=values[i+3]*5.8;
+    c.fillStyle=i%2?color:'#8b9fc7';c.fillRect(x+346+i*23,274-height,15,height);
+  }
+  deskText(c,'JAN       FEB       MAR       APR       MAY       JUN',x+32,291,'#52657c','11px Arial');
+}
+function paintBuildLog(c,time){
+  const jobs=['Opening room.js','Updating animation','Shading fur','Checking paw contact',
+    'Testing head tracking','Rendering scene','Build passed'];
+  const phase=time%22, step=Math.min(jobs.length,1+Math.floor(phase/2.7));
+  c.fillStyle='#111925';c.fillRect(0,0,256,448);
+  c.fillStyle='#26374c';c.fillRect(0,0,256,60);
+  deskText(c,'Codex',15,29,'#f4f6fb','bold 22px Arial');
+  deskText(c,'BUILD LOG',16,48,'#abd1dc','11px monospace');
+  deskText(c,'office / room.js',15,88,'#a3b8d0','13px monospace');
+  for(let i=0;i<step;i++){
+    const active=i===step-1&&i<jobs.length-1;
+    const y=122+i*34;
+    c.fillStyle=active?'#254b4c':'#1a293a';c.fillRect(12,y-17,232,27);
+    deskText(c,active?'›':'✓',19,y,active?'#fbd38e':'#8ee7c6','bold 13px Arial');
+    deskText(c,jobs[i],38,y,'#deebf5','13px monospace');
+  }
+  deskText(c,'SCENE VALIDATION',14,380,'#a2bdd3','12px Arial');
+  c.fillStyle='#23374d';c.fillRect(14,394,228,7);
+  c.fillStyle='#75c7aa';c.fillRect(14,394,228*Math.min(1,phase/17),7);
+  deskText(c,step===jobs.length?'Complete':'Working…',14,425,'#8ee7c6','13px Arial');
+}
+function paintDeskScreens(time){
+  paintSpreadsheet(screenInk,time);
+  paintDashboard(screenInk,1,time);
+  paintDashboard(screenInk,2,time);
+  paintCode(screenInk,3*screenWidth,time);
+  paintBuildLog(portraitInk,time);
+}
+paintDeskScreens(4);
+
 async function texture(name,unit,source){
   const img=typeof source==='string'?await new Promise((resolve,reject)=>{
     const image=new Image();image.onload=()=>resolve(image);image.onerror=reject;image.src=source;
   }):source;
-  gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,gl.createTexture());
+  const handle=gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,handle);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,img);
   gl.generateMipmap(gl.TEXTURE_2D);
@@ -486,8 +604,12 @@ async function texture(name,unit,source){
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
   gl.uniform1i(uniforms[name],unit);
+  return handle;
 }
-await Promise.all([texture('oak',0,photoTextures.oak),texture('banner',3,sign),texture('screens',2,screenArtwork)]);
+const [, , deskTexture, portraitTexture]=await Promise.all([
+  texture('oak',0,photoTextures.oak),texture('banner',3,sign),texture('screens',2,screenArtwork),
+  texture('portraitScreen',1,portraitArtwork)
+]);
 
 const sub=(a,b)=>a.map((x,i)=>x-b[i]);
 const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
@@ -1170,8 +1292,9 @@ const graphite='#292b30', blackBezel='#181b20', aluminum='#848b94';
 const powerLeads=[];
 function screen(w,h,y,z,variant){
   const l=-w/2,r=w/2,b=y-h/2,t=y+h/2;
-  const u=variant/4+.002,v=(variant+1)/4-.002;
-  quad([l,b,z],[r,b,z],[r,t,z],[l,t,z],'#334363',12,[[u,.002],[v,.002],[v,.998],[u,.998]]);
+  const portrait=variant===4;
+  const u=portrait?.002:variant/4+.002,v=portrait?.998:(variant+1)/4-.002;
+  quad([l,b,z],[r,b,z],[r,t,z],[l,t,z],'#334363',portrait?23:12,[[u,.002],[v,.002],[v,.998],[u,.998]]);
 }
 function monitor(id,x,z,angle,diagonal,portrait,center,arm,variant){
   bucket=id;
@@ -1260,7 +1383,7 @@ function mouse(id,x,z,angle){
 // Positions 1–3 run along the main desk. Position 4 is on the return.
 transform=onDesk;
 monitor('monitor1',-.430,.365,Math.PI,31,false,1.086,[0,-.183],3);
-monitor('monitor2',.127,.332,Math.PI-.75,27,true,1.160,[0,-.085],1);
+monitor('monitor2',.127,.332,Math.PI-.75,27,true,1.160,[0,-.085],4);
 // Rotate the laptop station around the left stand, keeping its monitors and supports together.
 positions(-.965,.285,Math.PI/4,()=>{
   const leftLaptopAngle=2.99;
@@ -1456,24 +1579,29 @@ positions(-.426,.166,Math.PI+.07,()=>{
 transform=p=>p;
 bucket='furniture';
 
-// Local +Z points toward the face. Material 320–328 identifies the joint.
+// Local +Z points toward the face. Material 320–328 identifies joints. Fur materials add a 32 or 64 offset.
 const catCoats=[
-  ['#e2d8cb','#faf1e2','#a99b90','#a77a71','#b47d37'],
+  ['#ebe6df','#f7f5ef','#c4b9af','#ad807f','#9aab64'],
   ['#737a8b','#b6bdc9','#545b70','#846e79','#be842e'],
   ['#c47e49','#f0cb9c','#95603b','#ad756c','#ad8439'],
   ['#d1beb1','#f5e2d2','#7d6663','#9a706e','#5594bf'],
-  ['#4b424b','#827884','#322d37','#886879','#aab05a']
+  ['#302a2b','#eee4d9','#302727','#886879','#bb903c']
 ];
 function modelPersian(coat,index){
   const [fur,ruff,shade,nose,iris]=coat;
   bucket='cat'+index;
   geometry[bucket]=[];
-  const ball=(part,x,y,z,sx,sy,sz,tint,sides=12,rings=7)=>{
-    transform=([a,b,c])=>[x+a*sx,y+b*sy,z+c*sz];
+  const coatMaterial=tint=>index===4&&tint===fur?384:352;
+  const ball=(part,x,y,z,sx,sy,sz,tint,sides=12,rings=7,ear=0)=>{
+    const fluffy=part!==8&&(tint===fur||tint===ruff||tint===shade);
+    transform=([a,b,c])=>[x+a*sx*(1-.40*ear*ear*b)+ear*.018*b,y+b*sy,z+c*sz];
     const vertices=geometry[bucket], start=vertices.length;
-    sphereAt(0,0,0,1,tint,320+part,sides,rings);
+    sphereAt(0,0,0,1,tint,(fluffy?coatMaterial(tint):320)+part,sides,rings);
     for(let v=start;v<vertices.length;v+=12){
-      const normal=unit([(vertices[v]-x)/(sx*sx),(vertices[v+1]-y)/(sy*sy),(vertices[v+2]-z)/(sz*sz)]);
+      const yLocal=(vertices[v+1]-y)/sy, wid=sx*(1-.4*ear*ear*yLocal);
+      const xLocal=(vertices[v]-x-ear*.018*yLocal)/wid;
+      const nx=xLocal/wid, ny=(yLocal-nx*(ear*.018-xLocal*sx*.4*ear*ear))/sy;
+      const normal=unit([nx,ny,(vertices[v+2]-z)/(sz*sz)]);
       for(let axis=0;axis<3;axis++)vertices[v+3+axis]=normal[axis];
     }
     transform=p=>p;
@@ -1482,50 +1610,66 @@ function modelPersian(coat,index){
   ball(0,0,.186,-.035,.112,.105,.172,fur,20,12);
   ball(0,0,.148,.063,.096,.098,.108,ruff,16,9);
   ball(0,0,.206,-.127,.102,.087,.087,fur);
-  // Overlapping tapered fur locks define the ruff, cheeks and belly.
-  for(let i=0;i<13;i++){
-    const a=i*2.399, y=.113+(i%3)*.031;
-    const x=Math.sin(a)*.083,z=.089+Math.cos(a)*.051;
-    segment(0,[x*.81,y+.035,z-.01],[x*1.20,y-.035,z+.014],.023,.003,i%3===0?fur:ruff,7);
-  }
-  for(let i=0;i<10;i++){
-    const side=i%2?1:-1,z=-.152+(i>>1)*.052;
-    segment(0,[side*.065,.151,z],[side*.101,.104,z-.020],.022,.003,i%4?fur:shade,7);
-  }
-  ball(1,0,.266,.127,.127,.112,.098,fur,24,14);
-  for(const side of [-1,1]){
-    ball(1,side*.068,.228,.172,.066,.052,.061,ruff,18,11);
-    ball(1,side*.032,.219,.213,.043,.033,.031,ruff,16,9);
-    // Small, rounded ears sit low and wide in the coat.
-    ball(1,side*.092,.344,.119,.039,.047,.027,fur,16,10);
-    ball(1,side*.093,.353,.140,.024,.029,.009,nose,14,9);
-    ball(1,side*.089,.333,.146,.023,.012,.012,ruff);
-    for(let i=0;i<4;i++){
-      ball(1,side*(.111-i*.012),.237-i*.014,.163-i*.006,
-        .026,.026-i*.002,.028,i%3===0?fur:ruff);
+  // Flowing fur clumps follow the neck, flank, cheek and tail silhouette.
+  // Three crossed blades per clump keep the coat full from every angle.
+  let furSeed=3709;
+  const furRandom=()=>((furSeed=(Math.imul(furSeed,1664525)+1013904223)>>>0)/4294967296);
+  function coatClumps(joint,center,radii,count,flow,accept,tint){
+    for(let i=0;i<count;i++){
+      const y=1-2*(i+.5)/count,a=i*2.399963+.13*furRandom();
+      const r=Math.sqrt(1-y*y),n=[r*Math.cos(a),y,r*Math.sin(a)];
+      if(!accept(n))continue;
+      const root=n.map((v,j)=>center[j]+v*radii[j]*.92);
+      const length=.62+.64*furRandom(),width=.0028+.0042*furRandom();
+      const tip=root.map((v,j)=>v+flow[j]*length+n[j]*(.008+.010*furRandom()));
+      const bend=root.map((v,j)=>v+(tip[j]-v)*.46+n[j]*.009);
+      const t=unit(sub(tip,root)),u=unit(cross(t,Math.abs(t[1])>.85?[1,0,0]:[0,1,0])),v=cross(t,u);
+      const mat=coatMaterial(tint)+joint;
+      for(let blade=0;blade<3;blade++){
+        const angle=blade*Math.PI/3;
+        const offset=(p,w)=>p.map((axis,j)=>axis+w*(u[j]*Math.cos(angle)+v[j]*Math.sin(angle)));
+        const a=offset(root,width*.65),b=offset(root,-width*.65);
+        const c=offset(bend,-width),d=offset(bend,width);
+        quad(a,b,c,d,tint,mat);
+        tri(d,c,tip,tint,mat);
+      }
     }
+  }
+  coatClumps(0,[0,.186,-.035],[.112,.105,.172],280,[0,-.033,-.023],n=>n[1]<.70,fur);
+  coatClumps(0,[0,.154,.079],[.103,.091,.106],265,[0,-.047,.012],n=>n[2]>-.12,ruff);
+  ball(1,0,.266,.124,.125,.105,.091,fur,26,15);
+  coatClumps(1,[0,.25,.136],[.125,.103,.085],220,[0,-.018,-.008],n=>n[2]<.55||Math.abs(n[0])>.89,fur);
+  for(const side of [-1,1]){
+    ball(1,side*.066,.225,.161,.064,.049,.049,fur,20,12);
+    ball(1,side*.028,.219,.193,.042,.029,.034,ruff,18,11);
+    // Small tapered ears, with recessed inner skin and pale ear furnishings.
+    ball(1,side*.090,.341,.110,.034,.048,.026,fur,20,12,side);
+    ball(1,side*.095,.350,.129,.022,.033,.010,nose,16,10,side);
+    coatClumps(1,[side*.088,.331,.135],[.024,.015,.011],33,[side*.012,.018,.004],n=>n[2]>.20,ruff);
+    coatClumps(1,[side*.078,.223,.157],[.051,.048,.048],70,[side*.011,-.027,.006],
+      n=>side*n[0]>.27&&n[1]<.45,fur);
 
     // The iris rim and two catchlights stay attached to the eye when it blinks.
-    const x=side*.055;
-    ball(8,x,.280,.209,.038,.037,.023,shade,20,11);
-    ball(8,x,.280,.222,.033,.032,.017,'#302527',20,11);
-    ball(8,x,.280,.231,.0265,.027,.012,iris,20,11);
-    ball(8,x,.281,.241,.017,.020,.006,'#1d191e',16,10);
-    ball(8,x-.008,.291,.247,.007,.007,.0025,'#fff9ef',12,7);
-    ball(8,x+.008,.274,.246,.003,.0035,.002,'#f5ecd7',10,6);
+    const x=side*.049;
+    ball(8,x,.281,.190,.034,.029,.021,shade,20,11);
+    ball(8,x,.281,.207,.029,.027,.015,'#302527',20,11);
+    ball(8,x,.281,.217,.024,.024,.010,iris,20,11);
+    ball(8,x,.282,.225,.014,.020,.005,'#1d191e',16,10);
+    ball(8,x-.007,.290,.230,.0042,.0042,.0019,'#fff9ef',12,7);
+    ball(8,x+.006,.275,.229,.0018,.002,.0014,'#f5ecd7',10,6);
     for(let i=0;i<3;i++){
       const y=.222-i*.006;
-      segment(1,[side*.048,y,.242],[side*.096,y+.006-i*.003,.246],.00084,.00065,ruff,6);
-      segment(1,[side*.096,y+.006-i*.003,.246],
-        [side*(.152-i*.005),y+.012-i*.008,.237],.00065,.00022,ruff,6);
+      segment(1,[side*.034,y,.219],[side*.093,y+.005-i*.003,.236],.00084,.00065,ruff,6);
+      segment(1,[side*.093,y+.005-i*.003,.236],
+        [side*(.151-i*.007),y+.022-i*.012,.231],.00065,.00022,ruff,6);
     }
-    ball(1,side*.008,.244,.245,.009,.008,.006,nose,14,8);
-    segment(1,[0,.225,.247],[side*.012,.221,.245],.0017,.0014,'#654b4d',7);
-    segment(1,[side*.012,.221,.245],[side*.022,.227,.243],.0014,.0008,'#654b4d',7);
+    ball(1,side*.007,.248,.224,.008,.006,.005,nose,14,8);
+    segment(1,[0,.225,.227],[side*.011,.222,.226],.0017,.0014,'#654b4d',7);
+    segment(1,[side*.011,.222,.226],[side*.022,.226,.224],.0014,.0008,'#654b4d',7);
   }
-  ball(1,0,.239,.246,.012,.009,.006,nose,16,10);
-  segment(1,[0,.232,.249],[0,.225,.247],.0015,.0015,'#654b4d',7);
-  ball(1,0,.198,.209,.051,.028,.034,ruff,16,10);
+  ball(1,0,.244,.226,.010,.008,.005,nose,16,10);
+  segment(1,[0,.237,.228],[0,.225,.227],.0015,.0015,'#654b4d',7);
+  ball(1,0,.196,.191,.050,.029,.030,ruff,16,10);
   for(let joint=0;joint<4;joint++){
     const side=joint%2?1:-1,z=joint<2?.092:-.135, x=side*.066, part=2+joint;
     ball(part,x,.103,z,.045,.076,.043,fur,12,8);
@@ -1538,11 +1682,8 @@ function modelPersian(coat,index){
   ball(7,0,.324,-.324,.069,.096,.074,fur,18,12);
   ball(7,.008,.375,-.318,.066,.094,.067,fur,18,12);
   ball(7,.017,.429,-.300,.051,.056,.052,fur,16,11);
-  for(let i=0;i<8;i++){
-    const a=i*Math.PI/4;
-    segment(7,[Math.cos(a)*.032,.359+Math.sin(a)*.055,-.342],
-      [Math.cos(a)*.067,.390+Math.sin(a)*.081,-.351],.021,.001,i%3?fur:shade,7);
-  }
+  coatClumps(6,[0,.247,-.249],[.059,.091,.108],106,[0,.030,-.028],n=>n[2]<.42,fur);
+  coatClumps(7,[.004,.363,-.322],[.064,.110,.068],150,[0,.040,-.005],n=>n[1]>-.76,fur);
   bucket='furniture';
 }
 catCoats.forEach(modelPersian);
@@ -2375,7 +2516,8 @@ petCat.addEventListener('click',()=>{
   catPanel.open=false;
 });
 
-let prior=performance.now(),lastLavaPaint=prior,frames=0;
+let prior=performance.now(),lastLavaPaint=prior,lastScreenPaint=prior,frames=0;
+const liveScreenItems=['monitor1','monitor2','monitorAbove','monitor4','laptopLeft','laptopRight','ipad','phone'];
 function frame(now){
   const dt=Math.min((now-prior)/1000,.045);prior=now;
   const animated=doorAngle!==doorGoal;
@@ -2384,7 +2526,9 @@ function frame(now){
   const catsActive=cats.length>0&&!!presets[mode];
   if(catsActive)updateCats(dt,now);
   const cabinetMoving=cabinetAngles.some((angle,i)=>angle!==cabinetGoals[i]);
-  const changed=keys.size>0||animated||cabinetMoving||sip||(noteUntil&&now>=noteUntil)||stick.right||stick.forward||
+  const screensChanged=!!presets[mode]&&now-lastScreenPaint>=(reduced?600:180)&&
+    liveScreenItems.some(id=>visibleEquipment.has(id));
+  const changed=screensChanged||keys.size>0||animated||cabinetMoving||sip||(noteUntil&&now>=noteUntil)||stick.right||stick.forward||
     ((lavaActive||catsActive)&&now-lastLavaPaint>=32);
   const scale=Math.min(devicePixelRatio,1.6);
   const w=Math.max(1,Math.round(canvas.clientWidth*scale)),h=Math.max(1,Math.round(canvas.clientHeight*scale));
@@ -2415,6 +2559,17 @@ function frame(now){
       if(doorAngle===0)playRoomSound('door');
     }
     if(cabinetMoving)updateCabinets(dt);
+    if(screensChanged){
+      paintDeskScreens(now*.001+4);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+      for(const [unit,handle,picture] of [[2,deskTexture,screenArtwork],[1,portraitTexture,portraitArtwork]]){
+        gl.activeTexture(gl.TEXTURE0+unit);
+        gl.bindTexture(gl.TEXTURE_2D,handle);
+        gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,picture);
+        gl.generateMipmap(gl.TEXTURE_2D);
+      }
+      lastScreenPaint=now;
+    }
     const aspect=w/h, orthographic=!presets[mode];
     let matrix,position=eye;
     if(orthographic){
