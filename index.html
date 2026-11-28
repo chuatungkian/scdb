@@ -294,7 +294,7 @@ precision highp float;
 in vec3 world,nrm,rgb,rest;
 in vec2 coord;
 flat in int kind;
-uniform sampler2D oak,banner,screens,portraitScreen;
+uniform sampler2D oak,banner,screens,portraitScreen,extraScreen;
 uniform vec2 chairShift;
 uniform vec3 eye;
 uniform bool plan;
@@ -339,7 +339,10 @@ void main(){
     pixel=vec4(t.rgb,t.a);return;
   }
   if(kind==5){pixel=vec4(base,1.);return;}
-  if(kind==12||kind==23){pixel=kind==12?texture(screens,coord):texture(portraitScreen,coord);return;}
+  if(kind==12||kind==23||kind==24){
+    pixel=kind==12?texture(screens,coord):kind==23?texture(portraitScreen,coord):texture(extraScreen,coord);
+    return;
+  }
   if(kind==8){
     float frosted=(1.-smoothstep(1.24,1.42,world.y))*smoothstep(.055,.32,world.y);
     vec3 clear=vec3(.35,.46,.42), frost=mix(vec3(.27,.43,.37),vec3(.58,.69,.65),smoothstep(.15,1.6,world.y));
@@ -421,7 +424,7 @@ gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));
 gl.linkProgram(program);
 if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
 gl.useProgram(program);
-const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','cupCenters[0]','sipOffsets[0]','cabinetPivots[0]','cabinetAngles[0]','catPose[0]','oak','banner','screens','portraitScreen','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
+const uniforms=Object.fromEntries(['projection','hinge','doorAngle','chairShift','chairPivot','chairRotation','lavaOffsets[0]','cupCenters[0]','sipOffsets[0]','cabinetPivots[0]','cabinetAngles[0]','catPose[0]','oak','banner','screens','portraitScreen','extraScreen','eye','plan'].map(name=>[name,gl.getUniformLocation(program,name)]));
 
 function art(width,height,draw){
   const surface=document.createElement('canvas');
@@ -536,6 +539,7 @@ function paintDashboard(c,slot,time){
   c.fillStyle='#eaf0f7';c.fillRect(x,0,512,320);
   c.fillStyle='#243752';c.fillRect(x,0,512,43);
   deskText(c,slot===1?'Operations dashboard':'Cohort analysis',x+17,28,'#fff','bold 20px Arial');
+  const selected=Math.floor(time*2.3)%11;
   const stats=[['RECORDS',Math.round(1248+time%60*3)],['COMPLETION',(85+values[3]*.24).toFixed(1)+'%'],['CHANGE','+'+values[9].toFixed(1)+'%']];
   for(const [i,[label,metric]] of stats.entries()){
     const left=x+15+i*164;
@@ -548,12 +552,15 @@ function paintDashboard(c,slot,time){
   deskText(c,'By category',x+346,155,'#344860','bold 13px Arial');
   c.fillStyle='#dfE7EF';
   for(let y=177;y<275;y+=25)c.fillRect(x+32,y,270,1);
+  const cursorX=x+36+selected*26;
+  screenBox(c,slot===1?'#b5e7db':'#d9caf5',cursorX-5,163,10,112);
   c.strokeStyle=color;c.lineWidth=3;c.beginPath();
   for(const [i,value] of values.entries()){
     const px=x+36+i*26,py=274-value*5.8;
     if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
   }
   c.stroke();
+  screenBox(c,color,cursorX-4,270-values[selected]*5.8,8,8);
   for(let i=0;i<6;i++){
     const height=values[i+3]*5.8;
     c.fillStyle=i%2?color:'#8b9fc7';c.fillRect(x+346+i*23,274-height,15,height);
@@ -581,12 +588,79 @@ function paintBuildLog(c,time){
   c.fillStyle='#75c7aa';c.fillRect(14,394,228*Math.min(1,phase/17),7);
   deskText(c,step===jobs.length?'Complete':'Working…',14,425,'#8ee7c6','13px Arial');
 }
+const extraArtwork=art(1024,512,()=>{});
+const extraInk=extraArtwork.getContext('2d');
+const extraPanels={
+  signals:[0,0,512,256],
+  tablet:[512,0,512,256],
+  phone:[0,256,132,256]
+};
+const screenBox=(c,color,x,y,w,h)=>{c.fillStyle=color;c.fillRect(x,y,w,h);};
+
+function paintSignals(c,time,[x,y,w,h]){
+  screenBox(c,'#10182f',x,y,w,h);
+  screenBox(c,'#1e2c49',x,y,w,44);
+  deskText(c,'Activity monitor',x+22,y+30,'#f3f7ff','bold 24px Arial');
+  const colors=['#69ebc3','#a596ff','#63b7ff'];
+  const labels=['INPUT','PROCESSING','OUTPUT'];
+  for(let row=0;row<3;row++){
+    const top=y+55+row*63,left=x+135;
+    screenBox(c,'#182541',x+16,top,480,52);
+    deskText(c,labels[row],x+24,top+19,colors[row],'bold 13px Arial');
+    deskText(c,Math.round(48+31*Math.sin(time*.9+row))+'%',x+24,top+43,'#f3f7ff','bold 20px monospace');
+    screenBox(c,'#30415f',left,top+25,344,1);
+    c.strokeStyle=colors[row];c.lineWidth=3;c.beginPath();
+    for(let i=0;i<38;i++){
+      const value=top+25+12*Math.sin(i*.42-time*2+row)+7*Math.cos(i*.75+time*1.3);
+      if(i===0)c.moveTo(left,value);else c.lineTo(left+i*9,value);
+    }
+    c.stroke();
+  }
+}
+function paintTablet(c,time,[x,y,w,h]){
+  screenBox(c,'#f2edfa',x,y,w,h);
+  screenBox(c,'#594578',x,y,w,48);
+  deskText(c,'Today’s agenda',x+21,y+33,'#fff','bold 24px Arial');
+  const agenda=[['09:00','Review notes'],['10:30','Team check-in'],['13:00','Plan next steps'],['15:30','Wrap up']];
+  const active=Math.floor(time/4)%agenda.length;
+  for(const [i,[hour,label]] of agenda.entries()){
+    const row=y+58+i*46;
+    screenBox(c,i===active?'#d8c7f4':'#fffcff',x+15,row,w-30,40);
+    deskText(c,hour,x+28,row+26,'#594578','bold 19px monospace');
+    deskText(c,label,x+117,row+26,'#322740','bold 18px Arial');
+    if(i===active){
+      screenBox(c,'#aa88d8',x+15,row,6,40);
+      screenBox(c,'#9770cd',x+117,row+32,Math.max(1,300*(time%4)/4),4);
+    }
+  }
+}
+function paintPhone(c,time,[x,y,w,h]){
+  const tick=Math.floor(time),second=tick%60;
+  const digits=n=>String(n).padStart(2,'0');
+  screenBox(c,'#162a52',x,y,w,h);
+  for(let i=0;i<8;i++){
+    const offset=9*Math.sin(time*.82+i*.55);
+    screenBox(c,i%2?'#274c7d':'#2e608d',x,y+61+i*19+offset,w,23);
+  }
+  deskText(c,'OFFICE',x+19,y+28,'#bbdfff','bold 13px Arial');
+  deskText(c,digits(9+Math.floor(tick/3600)%12)+':'+digits(Math.floor(tick/60)%60),x+13,y+85,'#fff','bold 34px monospace');
+  deskText(c,':'+digits(second),x+47,y+108,'#e2f5ff','bold 19px monospace');
+  const alerts=['Team check-in','Notes synced','Charts updated','Calendar ready'];
+  screenBox(c,'#d2edff',x+7,y+139,w-14,57);
+  deskText(c,'NOTIFICATION',x+14,y+158,'#204974','bold 11px Arial');
+  deskText(c,alerts[Math.floor(time/3)%alerts.length],x+14,y+181,'#142c4f','bold 12px Arial');
+  screenBox(c,'#f5faff',x+40,y+235,52,3);
+}
+
 function paintDeskScreens(time){
   paintSpreadsheet(screenInk,time);
   paintDashboard(screenInk,1,time);
   paintDashboard(screenInk,2,time);
   paintCode(screenInk,3*screenWidth,time);
   paintBuildLog(portraitInk,time);
+  paintSignals(extraInk,time,extraPanels.signals);
+  paintTablet(extraInk,time,extraPanels.tablet);
+  paintPhone(extraInk,time,extraPanels.phone);
 }
 paintDeskScreens(4);
 
@@ -606,9 +680,9 @@ async function texture(name,unit,source){
   gl.uniform1i(uniforms[name],unit);
   return handle;
 }
-const [, , deskTexture, portraitTexture]=await Promise.all([
+const [, , deskTexture, portraitTexture, extraTexture]=await Promise.all([
   texture('oak',0,photoTextures.oak),texture('banner',3,sign),texture('screens',2,screenArtwork),
-  texture('portraitScreen',1,portraitArtwork)
+  texture('portraitScreen',1,portraitArtwork),texture('extraScreen',4,extraArtwork)
 ]);
 
 const sub=(a,b)=>a.map((x,i)=>x-b[i]);
@@ -1292,6 +1366,14 @@ const graphite='#292b30', blackBezel='#181b20', aluminum='#848b94';
 const powerLeads=[];
 function screen(w,h,y,z,variant){
   const l=-w/2,r=w/2,b=y-h/2,t=y+h/2;
+  const panel=extraPanels[variant];
+  if(panel){
+    const [x,y,width,height]=panel;
+    const u=(x+2)/extraArtwork.width,v=(x+width-2)/extraArtwork.width;
+    const bottom=1-(y+height-2)/extraArtwork.height,top=1-(y+2)/extraArtwork.height;
+    quad([l,b,z],[r,b,z],[r,t,z],[l,t,z],'#334363',24,[[u,bottom],[v,bottom],[v,top],[u,top]]);
+    return;
+  }
   const portrait=variant===4;
   const u=portrait?.002:variant/4+.002,v=portrait?.998:(variant+1)/4-.002;
   quad([l,b,z],[r,b,z],[r,t,z],[l,t,z],'#334363',portrait?23:12,[[u,.002],[v,.002],[v,.998],[u,.998]]);
@@ -1395,7 +1477,7 @@ positions(-.965,.285,Math.PI/4,()=>{
   const overheadShift=.105;
   monitor('monitorAbove',-lidDepth*Math.sin(leftLaptopAngle)+overheadShift*Math.cos(leftLaptopAngle),
     lidDepth*Math.cos(leftLaptopAngle)+overheadShift*Math.sin(leftLaptopAngle),
-    leftLaptopAngle,27,false,lidTop+monitorHalfHeight+.002,[.285,-.036],2);
+    leftLaptopAngle,27,false,lidTop+monitorHalfHeight+.002,[.285,-.036],'signals');
 });
 const returnShift=27*.0254*16/Math.hypot(16,9)/2;
 const returnMonitorZ=-1.025+2*returnShift;
@@ -1565,7 +1647,7 @@ positions(.106,.124,Math.PI-.33,()=>{
     tube([x,.099,-.068],[x,.011,-.008],.0035,.0035,folio,0,8);
   }
   block(0,.011,.001,.211,.010,.014,folio);
-  handheld(.244,.177,.015,.55,1);
+  handheld(.244,.177,.015,.55,'tablet');
 });
 bucket='phone';
 positions(-.426,.166,Math.PI+.07,()=>{
@@ -1574,7 +1656,7 @@ positions(-.426,.166,Math.PI+.07,()=>{
   tube([0,.008,-.041],[0,.086,-.029],.008,.006,stand,4,12);
   block(0,.084,-.028,.056,.069,.010,stand);
   block(0,.041,.002,.066,.009,.023,'#30353e');
-  handheld(.073,.151,.046,.18,2);
+  handheld(.073,.151,.046,.18,'phone');
 });
 transform=p=>p;
 bucket='furniture';
@@ -2562,7 +2644,7 @@ function frame(now){
     if(screensChanged){
       paintDeskScreens(now*.001+4);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
-      for(const [unit,handle,picture] of [[2,deskTexture,screenArtwork],[1,portraitTexture,portraitArtwork]]){
+      for(const [unit,handle,picture] of [[2,deskTexture,screenArtwork],[1,portraitTexture,portraitArtwork],[4,extraTexture,extraArtwork]]){
         gl.activeTexture(gl.TEXTURE0+unit);
         gl.bindTexture(gl.TEXTURE_2D,handle);
         gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,picture);
